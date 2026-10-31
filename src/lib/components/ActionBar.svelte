@@ -36,7 +36,6 @@
           {/if}
         </span>
         <span class="rail-label">{mod.shortTitle}</span>
-        <span class="active-indicator-bar" aria-hidden="true"></span>
       </button>
     {/each}
 
@@ -53,7 +52,6 @@
         <ModuleIcon id="toolbox" size={20} />
       </span>
       <span class="rail-label">Toolbox</span>
-      <span class="active-indicator-bar" aria-hidden="true"></span>
     </button>
   </nav>
 
@@ -147,62 +145,23 @@
     border-color: var(--border-header);
   }
 
-  /* SELECTED & DRAWER OPEN: Bold, illuminated, unmistakably selected */
+  /* SELECTED & DRAWER OPEN: Bold, illuminated, clean pill */
   .rail-btn.active {
     background-color: var(--bg-header-active);
     color: var(--text-on-header-active);
     border-color: var(--border-header-active);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--border-header-active);
-    transform: scale(1.02);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   }
 
   .rail-btn.active .rail-label {
     font-weight: 700;
   }
 
-  /* Left accent micro-notch inside the button for maximum recognition */
-  .rail-btn.active::before {
-    content: '';
-    position: absolute;
-    left: 2px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 20px;
-    background-color: currentColor;
-    border-radius: 2px;
-    opacity: 0.85;
-  }
-
-  /* Physical Right-edge Connection Notch directly to the ActionPanel Drawer */
-  .active-indicator-bar {
-    display: none;
-    position: absolute;
-    right: -5px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 4px;
-    height: 28px;
-    background-color: var(--indicator-header-active);
-    border-radius: 3px 0 0 3px;
-    box-shadow: 0 0 8px var(--indicator-header-active);
-  }
-
-  .rail-btn.active .active-indicator-bar {
-    display: block;
-  }
-
-  /* SELECTED BUT DRAWER COLLAPSED: Outlined & right notch so user knows which tab is primed */
+  /* SELECTED BUT DRAWER COLLAPSED: Subtle outline so user knows which tab was active */
   .rail-btn.current-tab {
     color: var(--text-on-header);
     background-color: var(--bg-header-btn);
     border-color: var(--border-header);
-  }
-
-  .rail-btn.current-tab .active-indicator-bar {
-    display: block;
-    height: 14px;
-    opacity: 0.75;
   }
 
   .rail-label {
