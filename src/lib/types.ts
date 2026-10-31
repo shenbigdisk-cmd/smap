@@ -14,6 +14,8 @@ export type MeasurementUnit = 'metric' | 'imperial'
 
 export type CoordinateFormat = 'mga2020' | 'gda2020_latlng' | 'dd' | 'mga55' | 'dms'
 
+export type IdentifyDisplayMode = 'auto' | 'popup' | 'panel'
+
 export interface UserSettings {
   layout: LayoutMode
   theme: AppTheme
@@ -21,9 +23,26 @@ export interface UserSettings {
   coordFormat: CoordinateFormat
   buildings3D: boolean
   animationSpeed: 'normal' | 'fast' | 'instant'
+  identifyDisplayMode?: IdentifyDisplayMode
 }
 
-export type ModuleCategory = 'core' | 'analysis' | 'cartography' | 'output'
+export type ModuleCategory = 'core' | 'analysis' | 'cartography' | 'output' | 'custom'
+
+export type ViewPlacement = 'sidepanel' | 'toolbox'
+
+export interface WebGISView {
+  id: string
+  moduleId: string
+  name: string
+  shortTitle: string
+  description: string
+  category: ModuleCategory
+  icon?: string
+  placement: ViewPlacement
+  defaultPlacement: ViewPlacement
+  supportedPlacements?: readonly ViewPlacement[]
+  order: number
+}
 
 export interface WebGISModule {
   id: string
@@ -33,6 +52,7 @@ export interface WebGISModule {
   category: ModuleCategory
   isPinned: boolean
   isExpandedInToolbox: boolean
+  views?: WebGISView[]
 }
 
 export type SurfaceMode = string
@@ -118,11 +138,64 @@ export type LayerFormat =
 export type ServiceType =
   | 'esri-rest'
   | 'wms'
+  | 'wmts'
   | 'wfs'
   | 'ogc-api'
   | 'vector-tile'
   | 'geojson-static'
   | 'pmtiles'
+
+// --- OmniLayer Specification: Dual-Channel Spatial Architecture (DCSA) ---
+
+export type LayerRenderType =
+  | 'pmtiles'
+  | 'vector_tile'
+  | 'raster_tile'
+  | 'wms'
+  | 'wmts'
+  | 'esri_export'
+  | 'esri_tile'
+  | 'geojson'
+
+export interface LayerRenderDescriptor {
+  type: LayerRenderType
+  url: string
+  source_layer?: string
+  layers?: string | number
+  sublayers?: number[]
+  format?: string
+  transparent?: boolean
+  minzoom?: number
+  maxzoom?: number
+  paint?: Record<string, any>
+  layout?: Record<string, any>
+}
+
+export type FeatureServiceType =
+  | 'ogc_features'
+  | 'wfs'
+  | 'esri_rest'
+  | 'geojson_local'
+
+export interface FeatureServiceDescriptor {
+  type: FeatureServiceType
+  collection_url: string
+  url?: string
+  id_field?: string
+  display_field?: string
+  queryable_fields?: string[]
+  fields?: LayerFieldConfig[]
+}
+
+export interface LayerCapabilitiesMatrix {
+  identify: 'server' | 'client' | boolean
+  query: boolean
+  buffer: boolean
+  export: boolean
+  table: boolean
+  queryAttribute?: boolean
+  querySpatial?: boolean
+}
 
 export interface LayerFieldConfig {
   key: string
@@ -138,12 +211,13 @@ export interface LayerQueryConfig {
 }
 
 export interface LayerCapabilities {
-  identify: boolean
+  identify: boolean | 'server' | 'client'
   queryAttribute: boolean
   querySpatial: boolean
   buffer: boolean
   export: boolean
   table: boolean
+  query?: boolean
 }
 
 export interface LayerRenderingConfig {
@@ -181,6 +255,7 @@ export interface ServiceLayer {
   geometryType?: 'point' | 'line' | 'polygon'
   description?: string
   visible: boolean
+  enabled?: boolean
   opacity: number
   color: string
   minZoom?: number
@@ -188,6 +263,9 @@ export interface ServiceLayer {
   rendering: LayerRenderingConfig
   data: LayerDataConfig
   capabilities: LayerCapabilities
+  // OmniLayer Dual-Channel Specification
+  render?: LayerRenderDescriptor
+  feature_service?: FeatureServiceDescriptor
   // Convenience & backward compatibility fields
   format?: LayerFormat
   url?: string
@@ -205,6 +283,12 @@ export interface ServiceDefinition {
   url: string
   attribution?: string
   description?: string
+  visible: boolean
+  enabled?: boolean
+  status?: 'ready' | 'loading' | 'offline' | 'error'
+  error?: string
+  autoDiscover?: boolean
+  opacity: number
   layers: ServiceLayer[]
 }
 
@@ -245,6 +329,7 @@ export interface QueryDefinition {
 export interface QueryResultFeature {
   id: string | number
   layerId: string
+  layerTitle?: string
   title: string
   subtitle?: string
   geometry: any
@@ -257,6 +342,8 @@ export interface QueryResultCollection {
   timestamp: number
   features: QueryResultFeature[]
   totalCount: number
+  coordinate?: [number, number]
+  source?: 'identify' | 'query'
 }
 
 export interface SearchSourceConfig {
@@ -324,4 +411,21 @@ export interface BufferState {
     type: 'Polygon'
     coordinates: number[][][]
   } | null
+}
+
+export type PaperSize = 'a4' | 'a3' | 'a5' | 'letter'
+export type PageOrientation = 'landscape' | 'portrait'
+export type PrintDpi = 96 | 150 | 300
+export type PrintFormat = 'pdf' | 'png' | 'jpeg'
+
+export interface UserPrintSettings {
+  paperSize: PaperSize
+  orientation: PageOrientation
+  dpi: PrintDpi
+  format: PrintFormat
+  showScale: boolean
+  showNorthArrow: boolean
+  showCoordinates: boolean
+  showLegend: boolean
+  showPrintFrame: boolean
 }

@@ -1,131 +1,71 @@
-import { mapStore } from '../stores/mapStore.svelte'
 import { MAP_CONFIG } from '../config/map.config'
 import type { BasemapId } from '../types'
 
 /**
- * Parses URL hash synchronously at startup to prevent any initial 'zoom' or jumping animation.
+ * Manages initial view state loading from local storage / IndexedDB.
+ * URL coordinates and basemaps have been removed per user preference.
  */
+
 export function getInitialMapViewState(): {
   center: [number, number]
   zoom: number
+  pitch?: number
+  bearing?: number
   basemapId?: BasemapId
   parcelId?: string
 } {
-  if (typeof window === 'undefined') {
-    return {
-      center: MAP_CONFIG.initialView.center,
-      zoom: MAP_CONFIG.initialView.zoom
+  // Clear any legacy hash from URL if present
+  if (typeof window !== 'undefined' && window.location.hash) {
+    if (window.location.hash.includes('map=') || window.location.hash.includes('basemap=')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
     }
   }
 
-  const hash = window.location.hash.replace(/^#/, '')
-  if (!hash) {
-    return {
-      center: MAP_CONFIG.initialView.center,
-      zoom: MAP_CONFIG.initialView.zoom
-    }
-  }
-
-  const params = new URLSearchParams(hash)
   let center: [number, number] = MAP_CONFIG.initialView.center
   let zoom: number = MAP_CONFIG.initialView.zoom
+  let pitch: number = MAP_CONFIG.initialView.pitch || 0
+  let bearing: number = MAP_CONFIG.initialView.bearing || 0
+  let basemapId: BasemapId | undefined = undefined
 
-  const mapParam = params.get('map')
-  if (mapParam) {
-    const parts = mapParam.split('/')
-    if (parts.length === 3) {
-      const z = parseFloat(parts[0])
-      const lat = parseFloat(parts[1])
-      const lng = parseFloat(parts[2])
-      if (!isNaN(z) && !isNaN(lat) && !isNaN(lng)) {
-        center = [lng, lat]
-        zoom = z
+  if (typeof localStorage !== 'undefined') {
+    try {
+      // 1. Restore map extent
+      const savedExtent = localStorage.getItem('smap_last_extent')
+      if (savedExtent) {
+        const parsed = JSON.parse(savedExtent)
+        if (Array.isArray(parsed.center) && typeof parsed.zoom === 'number') {
+          center = parsed.center
+          zoom = parsed.zoom
+          pitch = parsed.pitch ?? pitch
+          bearing = parsed.bearing ?? bearing
+        }
       }
+
+      // 2. Restore basemap
+      const savedBasemap = localStorage.getItem('smap_last_basemap') as BasemapId | null
+      if (
+        savedBasemap &&
+        ['carto-light', 'carto-voyager', 'carto-dark', 'esri-satellite'].includes(savedBasemap)
+      ) {
+        basemapId = savedBasemap
+      }
+    } catch {
+      // ignore JSON parse errors
     }
   }
 
-  const basemapParam = params.get('basemap') as BasemapId | null
-  const basemapId =
-    basemapParam && ['carto-light', 'carto-voyager', 'carto-dark', 'esri-satellite'].includes(basemapParam)
-      ? basemapParam
-      : undefined
-
-  const parcelId = params.get('parcel') || undefined
-
-  return { center, zoom, basemapId, parcelId }
+  return { center, zoom, pitch, bearing, basemapId }
 }
 
 export function initUrlStateSync() {
-  window.addEventListener('hashchange', handleHashChange)
-}
-
-function handleHashChange() {
-  const hash = window.location.hash.replace(/^#/, '')
-  if (!hash) return
-
-  const params = new URLSearchParams(hash)
-  const mapParam = params.get('map')
-  if (mapParam && mapStore.map) {
-    const parts = mapParam.split('/')
-    if (parts.length === 3) {
-      const zoom = parseFloat(parts[0])
-      const lat = parseFloat(parts[1])
-      const lng = parseFloat(parts[2])
-      if (!isNaN(zoom) && !isNaN(lat) && !isNaN(lng)) {
-        const curCenter = mapStore.map.getCenter()
-        const curZoom = mapStore.map.getZoom()
-        // Only jump if materially different to avoid loop
-        if (
-          Math.abs(curCenter.lat - lat) > 0.0001 ||
-          Math.abs(curCenter.lng - lng) > 0.0001 ||
-          Math.abs(curZoom - zoom) > 0.1
-        ) {
-          mapStore.map.jumpTo({ center: [lng, lat], zoom })
-        }
-      }
+  // Clean URL hash on initialization
+  if (typeof window !== 'undefined' && window.location.hash) {
+    if (window.location.hash.includes('map=') || window.location.hash.includes('basemap=')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
     }
   }
-
-  const basemapParam = params.get('basemap') as BasemapId | null
-  if (basemapParam && basemapParam !== mapStore.activeBasemapId) {
-    mapStore.setBasemap(basemapParam)
-  }
-
-  const parcelParam = params.get('parcel')
-  if (parcelParam && mapStore.selectedParcel?.id !== parcelParam) {
-    mapStore.selectParcelById(parcelParam)
-  }
 }
-
-let updateTimeout: number | undefined
 
 export function updateUrlHash() {
-  if (typeof window === 'undefined') return
-  clearTimeout(updateTimeout)
-
-  updateTimeout = window.setTimeout(() => {
-    const coords = mapStore.cursorCoordinates
-    const zoom = mapStore.currentZoom
-    const basemap = mapStore.activeBasemapId
-    const parcelId = mapStore.selectedParcel?.id
-
-    const params = new URLSearchParams()
-    if (mapStore.map) {
-      const center = mapStore.map.getCenter()
-      const z = mapStore.map.getZoom().toFixed(2)
-      params.set('map', `${z}/${center.lat.toFixed(5)}/${center.lng.toFixed(5)}`)
-    } else {
-      params.set('map', `${zoom}/${coords[1].toFixed(5)}/${coords[0].toFixed(5)}`)
-    }
-
-    params.set('basemap', basemap)
-    if (parcelId) {
-      params.set('parcel', parcelId)
-    }
-
-    const newHash = `#${params.toString()}`
-    if (window.location.hash !== newHash) {
-      window.history.replaceState(null, '', newHash)
-    }
-  }, 400)
+  // No-op: URL tracking for coordinates and basemap removed per user preference
 }

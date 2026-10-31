@@ -23,6 +23,8 @@ export {
 export { createPointBufferPolygon } from './utils/buffer'
 export { exportMapToPng } from './utils/exportMap'
 export { initUrlStateSync, updateUrlHash } from './utils/urlState'
+export { localDbGet, localDbSet, localDbDelete } from './services/localDb'
+export * from './services/persistence'
 
 // Reusable Components
 export { default as Header } from './components/Header.svelte'

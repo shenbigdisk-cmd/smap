@@ -266,6 +266,203 @@
       ]
     },
     {
+      "id": "service-vic-boundaries",
+      "name": "Victorian Administrative Boundaries (Live ArcGIS)",
+      "type": "esri-rest",
+      "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
+      "enabled": true,
+      "visible": true,
+      "description": "Statewide Victorian statutory administrative boundaries: Municipalities (LGA), Suburbs/Localities, Wards, and Postcodes",
+      "layers": [
+        {
+          "id": "layer-vic-lga",
+          "serviceId": "service-vic-boundaries",
+          "serviceLayerId": 4,
+          "title": "Local Government Area (LGA)",
+          "category": "boundaries",
+          "geometryType": "polygon",
+          "format": "esri-feature",
+          "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/4",
+          "type": "line",
+          "visible": true,
+          "enabled": true,
+          "opacity": 0.9,
+          "color": "#475569",
+          "description": "Official municipal council boundaries across Victoria",
+          "operations": ["query-attribute", "query-spatial", "buffer", "export", "identify", "table"],
+          "render": {
+            "type": "esri_export",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
+            "layers": "show:4",
+            "format": "png32"
+          },
+          "feature_service": {
+            "type": "esri_rest",
+            "collection_url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/4",
+            "id_field": "OBJECTID",
+            "display_field": "LGA_NAME",
+            "queryable_fields": ["LGA_NAME", "LGA_CODE", "LGA_OFFICIAL_NAME", "ABS_LGA_CODE"]
+          },
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "lga-source",
+            "style": {
+              "type": "line",
+              "paint": {
+                "line-color": "#475569",
+                "line-width": 2
+              }
+            }
+          },
+          "data": {
+            "adapter": "esri-rest",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/4",
+            "primaryKey": "OBJECTID",
+            "displayField": "LGA_NAME",
+            "outFields": ["LGA_NAME", "LGA_CODE", "LGA_OFFICIAL_NAME", "ABS_LGA_CODE"],
+            "fields": [
+              { "key": "LGA_NAME", "label": "Municipality Name", "type": "string" },
+              { "key": "LGA_CODE", "label": "LGA Code", "type": "string" },
+              { "key": "LGA_OFFICIAL_NAME", "label": "Official Council Name", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": "server",
+            "query": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        },
+        {
+          "id": "layer-vic-localities",
+          "serviceId": "service-vic-boundaries",
+          "serviceLayerId": 2,
+          "title": "Locality / Suburb Boundaries",
+          "category": "boundaries",
+          "geometryType": "polygon",
+          "format": "esri-feature",
+          "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/2",
+          "type": "line",
+          "visible": false,
+          "enabled": true,
+          "opacity": 0.8,
+          "color": "#6366f1",
+          "description": "Gazetted Victorian suburb and locality boundaries",
+          "operations": ["query-attribute", "query-spatial", "buffer", "export", "identify", "table"],
+          "render": {
+            "type": "esri_export",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
+            "layers": "show:2",
+            "format": "png32"
+          },
+          "feature_service": {
+            "type": "esri_rest",
+            "collection_url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/2",
+            "id_field": "OBJECTID",
+            "display_field": "LOCALITY_NAME",
+            "queryable_fields": ["LOCALITY_NAME", "GAZETTED_LOCALITY_NAME", "VICNAMES_ID"]
+          },
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "localities-source",
+            "style": {
+              "type": "line",
+              "paint": {
+                "line-color": "#6366f1",
+                "line-width": 1.5,
+                "line-dasharray": [3, 2]
+              }
+            }
+          },
+          "data": {
+            "adapter": "esri-rest",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/2",
+            "primaryKey": "OBJECTID",
+            "displayField": "LOCALITY_NAME",
+            "outFields": ["LOCALITY_NAME", "GAZETTED_LOCALITY_NAME", "VICNAMES_ID"],
+            "fields": [
+              { "key": "LOCALITY_NAME", "label": "Suburb / Locality", "type": "string" },
+              { "key": "GAZETTED_LOCALITY_NAME", "label": "Gazetted Name", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": "server",
+            "query": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        },
+        {
+          "id": "layer-vic-postcodes",
+          "serviceId": "service-vic-boundaries",
+          "serviceLayerId": 5,
+          "title": "Postcode Boundaries",
+          "category": "boundaries",
+          "geometryType": "polygon",
+          "format": "esri-feature",
+          "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/5",
+          "type": "line",
+          "visible": false,
+          "enabled": true,
+          "opacity": 0.8,
+          "color": "#0ea5e9",
+          "description": "Postal delivery boundaries across Victoria",
+          "operations": ["query-attribute", "query-spatial", "buffer", "export", "identify", "table"],
+          "render": {
+            "type": "esri_export",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
+            "layers": "show:5",
+            "format": "png32"
+          },
+          "feature_service": {
+            "type": "esri_rest",
+            "collection_url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/5",
+            "id_field": "OBJECTID",
+            "display_field": "POSTCODE",
+            "queryable_fields": ["POSTCODE", "STATE"]
+          },
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "postcodes-source",
+            "style": {
+              "type": "line",
+              "paint": {
+                "line-color": "#0ea5e9",
+                "line-width": 1.5,
+                "line-dasharray": [2, 2]
+              }
+            }
+          },
+          "data": {
+            "adapter": "esri-rest",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer/5",
+            "primaryKey": "OBJECTID",
+            "displayField": "POSTCODE",
+            "outFields": ["POSTCODE", "STATE"],
+            "fields": [
+              { "key": "POSTCODE", "label": "Postcode", "type": "string" },
+              { "key": "STATE", "label": "State", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": "server",
+            "query": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        }
+      ]
+    },
+    {
       "id": "service-planning-cache",
       "name": "Victorian Planning Scheme (Local Engine)",
       "type": "geojson-static",

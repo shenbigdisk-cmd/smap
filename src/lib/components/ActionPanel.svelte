@@ -2,33 +2,215 @@
   import { mapStore } from '../stores/mapStore.svelte'
   import ModuleRenderer from '../modules/ModuleRenderer.svelte'
 
-  let activeMod = $derived(
-    mapStore.modules.find((m) => m.id === mapStore.activeTab)
+  let activeView = $derived(
+    mapStore.views.find((v) => v.id === mapStore.activeTab)
   )
 
-  let title = $derived(
-    mapStore.activeTab === 'toolbox'
-      ? 'Advanced GIS Toolbox'
-      : activeMod?.name || 'Inspection Panel'
+  let activeMod = $derived(
+    activeView
+      ? mapStore.modules.find((m) => m.id === activeView.moduleId)
+      : mapStore.modules.find((m) => m.id === mapStore.activeTab)
   )
+
+  let isServiceDetail = $derived(
+    mapStore.activeTab === 'layers' && Boolean(mapStore.layersConfigServiceId)
+  )
+
+  let isFeatureDetail = $derived(
+    mapStore.activeTab === 'results' && mapStore.featuresViewMode === 'detail'
+  )
+
+  let isDetailView = $derived(isServiceDetail || isFeatureDetail)
+
+  let activeService = $derived(
+    isServiceDetail ? mapStore.services.find((s) => s.id === mapStore.layersConfigServiceId) : null
+  )
+
+  let activeCollection = $derived(mapStore.activeFeatureCollection)
+  let currentFeatureIndex = $derived(mapStore.inspectedFeatureIndex)
+
+  let title = $derived.by(() => {
+    if (mapStore.activeTab === 'toolbox') return 'Toolbox'
+    if (isServiceDetail && activeService) {
+      return activeService.name
+    }
+    if (isFeatureDetail) {
+      return 'Feature Details'
+    }
+    return activeView?.name || activeMod?.name || 'Inspection Panel'
+  })
+
+  function handleBack() {
+    if (mapStore.activeTab === 'layers') {
+      mapStore.closeServiceConfig()
+    } else if (mapStore.activeTab === 'results') {
+      mapStore.backToFeatureList()
+    }
+  }
 </script>
 
 <aside class="action-panel-drawer" class:hidden={!mapStore.sidebarOpen}>
   <div class="panel-header-bar">
-    <div class="header-titles">
-      <h2 class="panel-title">{title}</h2>
+    <!-- Left: Back Navigation (if in detail) + Title + Information Badges -->
+    <div class="header-left">
+      {#if isDetailView}
+        <button
+          type="button"
+          class="header-back-btn"
+          onclick={handleBack}
+          title="Back to list"
+          aria-label="Back to list"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </button>
+      {/if}
+
+      <h2 class="panel-title" title={title}>{title}</h2>
+
+      <!-- Information in Header -->
+      {#if mapStore.activeTab === 'layers'}
+        {#if !isServiceDetail}
+          <span class="header-count-badge" title="{mapStore.totalActiveServicesCount} active services">
+            {mapStore.totalActiveServicesCount} active
+          </span>
+        {/if}
+      {:else if mapStore.activeTab === 'results'}
+        {#if !isFeatureDetail && activeCollection && activeCollection.totalCount > 0}
+          <span class="header-count-badge" title="{activeCollection.totalCount} results">
+            {activeCollection.totalCount}
+          </span>
+        {/if}
+      {:else if mapStore.activeTab === 'bookmarks'}
+        <span class="header-count-badge" title="{mapStore.bookmarks.length} saved bookmarks">
+          {mapStore.bookmarks.length}
+        </span>
+      {:else if mapStore.activeTab === 'markup'}
+        <span class="header-count-badge" title="{mapStore.markups.length} annotations">
+          {mapStore.markups.length}
+        </span>
+      {/if}
     </div>
-    <button
-      class="panel-close-btn"
-      onclick={() => mapStore.closeSidebar()}
-      title="Close Panel"
-      aria-label="Close Panel"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>
-    </button>
+
+    <!-- Right: Contextual Action Buttons + Close Button -->
+    <div class="header-actions">
+      {#if mapStore.activeTab === 'results'}
+        {#if !isFeatureDetail && activeCollection && activeCollection.features.length > 0}
+          <!-- Cards vs Table Toggle -->
+          <div class="header-view-toggle">
+            <button
+              type="button"
+              class="toggle-btn"
+              class:active={mapStore.resultsViewMode === 'cards'}
+              onclick={() => (mapStore.resultsViewMode = 'cards')}
+              title="Cards view"
+              aria-label="Cards view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="toggle-btn"
+              class:active={mapStore.resultsViewMode === 'table'}
+              onclick={() => (mapStore.resultsViewMode = 'table')}
+              title="Table view"
+              aria-label="Table view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Clear Results -->
+          <button
+            type="button"
+            class="header-icon-btn"
+            onclick={() => mapStore.clearActiveFeatureCollection()}
+            title="Clear results"
+            aria-label="Clear results"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        {:else if isFeatureDetail && activeCollection && activeCollection.features.length > 1}
+          <!-- Pager for Feature Detail -->
+          <div class="header-pager">
+            <button
+              type="button"
+              class="pager-nav-btn"
+              disabled={currentFeatureIndex <= 0}
+              onclick={() => mapStore.navigateInspectedFeature('prev')}
+              title="Previous feature"
+              aria-label="Previous feature"
+            >
+              &lsaquo;
+            </button>
+            <span class="pager-text">{currentFeatureIndex + 1}/{activeCollection.features.length}</span>
+            <button
+              type="button"
+              class="pager-nav-btn"
+              disabled={currentFeatureIndex >= activeCollection.features.length - 1}
+              onclick={() => mapStore.navigateInspectedFeature('next')}
+              title="Next feature"
+              aria-label="Next feature"
+            >
+              &rsaquo;
+            </button>
+          </div>
+        {/if}
+      {:else if mapStore.activeTab === 'bookmarks'}
+        <button
+          type="button"
+          class="header-pill-btn"
+          onclick={() => (mapStore.isAddingBookmark = !mapStore.isAddingBookmark)}
+          title="Bookmark view"
+        >
+          {mapStore.isAddingBookmark ? 'Cancel' : '+ Add'}
+        </button>
+      {:else if mapStore.activeTab === 'measure' && mapStore.measurement.points.length > 0}
+        <button
+          type="button"
+          class="header-pill-btn"
+          onclick={() => mapStore.clearMeasurement()}
+          title="Clear measurement"
+        >
+          Clear
+        </button>
+      {:else if mapStore.activeTab === 'markup' && mapStore.markups.length > 0}
+        <button
+          type="button"
+          class="header-pill-btn"
+          onclick={() => mapStore.clearMarkups()}
+          title="Clear markups"
+        >
+          Clear
+        </button>
+      {/if}
+
+      <button
+        class="panel-close-btn"
+        onclick={() => mapStore.closeSidebar()}
+        title="Close Panel"
+        aria-label="Close Panel"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <div class="panel-content-area" class:flush-content={mapStore.activeTab === 'toolbox'}>
@@ -67,20 +249,170 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    height: 44px;
+    padding: 0 12px 0 14px;
     background-color: var(--bg-card-subtle);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-main);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.12s ease;
+  }
+
+  .header-back-btn:hover {
+    background-color: var(--bg-subtle);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
   }
 
   .panel-title {
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 700;
     color: var(--text-main);
     margin: 0;
     line-height: 1.2;
     letter-spacing: 0.02em;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-count-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .header-view-toggle {
+    display: inline-flex;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+
+  .toggle-btn.active {
+    background-color: var(--accent-primary);
+    color: #ffffff;
+  }
+
+  .header-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+
+  .header-icon-btn:hover {
+    color: var(--error-color, #dc2626);
+    background-color: var(--bg-subtle);
+    border-color: var(--border-color);
+  }
+
+  .header-pill-btn {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 7px;
+    cursor: pointer;
+    line-height: 1.4;
+    transition: all 0.12s ease;
+  }
+
+  .header-pill-btn:hover {
+    background-color: var(--accent-subtle);
+    border-color: var(--accent-primary);
+  }
+
+  .header-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1px 5px;
+    height: 22px;
+  }
+
+  .pager-nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+  }
+
+  .pager-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .pager-text {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
   }
 
   .panel-close-btn {
@@ -91,6 +423,8 @@
     padding: 4px;
     border-radius: 4px;
     display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .panel-close-btn:hover {
@@ -101,7 +435,7 @@
   .panel-content-area {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 12px 14px;
     background-color: var(--bg-panel);
   }
 

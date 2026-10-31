@@ -43,6 +43,15 @@ export class GeoJsonClientAdapter implements IDataAdapter {
             break
           }
         }
+      } else if (geom.type === 'LineString') {
+        isInside = this.pointNearPolyline(coordinate, geom.coordinates as [number, number][])
+      } else if (geom.type === 'MultiLineString') {
+        for (const line of geom.coordinates) {
+          if (this.pointNearPolyline(coordinate, line as [number, number][])) {
+            isInside = true
+            break
+          }
+        }
       } else if (geom.type === 'Point') {
         const dist = calculateDistanceMeters(coordinate, geom.coordinates as [number, number])
         isInside = dist < 20 // 20m tolerance for points
@@ -53,6 +62,7 @@ export class GeoJsonClientAdapter implements IDataAdapter {
         matches.push({
           id: feat.id || props.id || props.spi || `feat-${idx}`,
           layerId: layer.id,
+          layerTitle: layer.title,
           title: String(props[displayField] || props.title || props.name || `Feature #${idx + 1}`),
           subtitle: String(props.zone_code || props.municipality || props.locality || props.category || ''),
           geometry: geom,
@@ -159,6 +169,7 @@ export class GeoJsonClientAdapter implements IDataAdapter {
       return {
         id: feat.id || props.id || props.spi || `feat-${idx}`,
         layerId: layer.id,
+        layerTitle: layer.title,
         title: String(props[displayField] || props.title || props.name || `Feature #${idx + 1}`),
         subtitle: String(props.zone_code || props.municipality || props.locality || props.category || ''),
         geometry: feat.geometry,
@@ -171,7 +182,8 @@ export class GeoJsonClientAdapter implements IDataAdapter {
       layerTitle: layer.title,
       timestamp: Date.now(),
       features,
-      totalCount: filtered.length
+      totalCount: filtered.length,
+      source: 'query'
     }
   }
 
@@ -180,6 +192,40 @@ export class GeoJsonClientAdapter implements IDataAdapter {
       return this.featureStore.get(layer.id) || []
     }
     return []
+  }
+
+  private pointNearPolyline(
+    point: [number, number],
+    line: [number, number][],
+    toleranceMeters = 25
+  ): boolean {
+    if (!line || line.length < 2) return false
+    for (let i = 0; i < line.length - 1; i++) {
+      const p1 = line[i]
+      const p2 = line[i + 1]
+      if (this.distanceToSegmentMeters(point, p1, p2) <= toleranceMeters) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private distanceToSegmentMeters(
+    p: [number, number],
+    a: [number, number],
+    b: [number, number]
+  ): number {
+    const [px, py] = p
+    const [ax, ay] = a
+    const [bx, by] = b
+    const dx = bx - ax
+    const dy = by - ay
+    if (dx === 0 && dy === 0) {
+      return calculateDistanceMeters(p, a)
+    }
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    const proj: [number, number] = [ax + t * dx, ay + t * dy]
+    return calculateDistanceMeters(p, proj)
   }
 
   private pointInPolygon(point: [number, number], ring: [number, number][]): boolean {

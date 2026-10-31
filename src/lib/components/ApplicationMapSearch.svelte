@@ -63,8 +63,6 @@
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
-    {:else}
-      <span class="search-kbd-hint" aria-hidden="true" title="Press / to search">/</span>
     {/if}
   </div>
 
@@ -189,22 +187,6 @@
     background-color: var(--bg-subtle);
   }
 
-  .search-kbd-hint {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    background-color: var(--bg-subtle);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    line-height: 1;
-    user-select: none;
-    flex-shrink: 0;
-  }
 
   .search-results-dropdown {
     margin-top: 6px;

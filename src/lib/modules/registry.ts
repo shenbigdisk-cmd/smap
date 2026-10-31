@@ -1,130 +1,104 @@
 import type { Component } from 'svelte'
-import type { WebGISModule } from '../types'
-import WorkflowsModule from './WorkflowsModule.svelte'
-import LayersModule from './LayersModule.svelte'
-import QueryModule from './QueryModule.svelte'
-import ResultsModule from './ResultsModule.svelte'
-import MeasureModule from './MeasureModule.svelte'
-import BufferModule from './BufferModule.svelte'
-import MarkupModule from './MarkupModule.svelte'
-import BookmarksModule from './BookmarksModule.svelte'
-import ExportModule from './ExportModule.svelte'
-import ToolboxModule from './ToolboxModule.svelte'
+import type { WebGISModule, WebGISView } from '../types'
+import { moduleManager } from './core/ModuleManager'
+import {
+  WorkflowsModuleDef,
+  LayersModuleDef,
+  QueryModuleDef,
+  ResultsModuleDef,
+  MeasureModuleDef,
+  BufferModuleDef,
+  MarkupModuleDef,
+  BookmarksModuleDef,
+  PrintModuleDef,
+  ToolboxModuleDef
+} from './definitions'
+
+// Concrete module singletons inheriting from ModuleBase
+export const workflowsModule = new WorkflowsModuleDef()
+export const layersModule = new LayersModuleDef()
+export const queryModule = new QueryModuleDef()
+export const resultsModule = new ResultsModuleDef()
+export const measureModule = new MeasureModuleDef()
+export const bufferModule = new BufferModuleDef()
+export const markupModule = new MarkupModuleDef()
+export const bookmarksModule = new BookmarksModuleDef()
+export const printModule = new PrintModuleDef()
+export const toolboxModule = new ToolboxModuleDef()
+
+// Register all system modules with the ModuleManager
+moduleManager.registerAll([
+  workflowsModule,
+  layersModule,
+  queryModule,
+  resultsModule,
+  measureModule,
+  bufferModule,
+  markupModule,
+  bookmarksModule,
+  printModule,
+  toolboxModule
+])
 
 /**
  * Canonical initial configuration for all system WebGIS modules.
  * This is the single source of truth for module definitions and default ordering.
  */
 export const INITIAL_MODULES: WebGISModule[] = [
-  {
-    id: 'workflows',
-    name: 'Workflows & Quick Tasks',
-    shortTitle: 'Tasks',
-    description: 'Initial navigation, statewide extent, and quick property jumps',
-    category: 'core',
-    isPinned: true,
-    isExpandedInToolbox: false
-  },
-  {
-    id: 'layers',
-    name: 'Operational Layers & Legend',
-    shortTitle: 'Layers',
-    description: 'Layer visibility toggles, opacity sliders, and statutory planning legend',
-    category: 'core',
-    isPinned: true,
-    isExpandedInToolbox: true
-  },
-  {
-    id: 'query',
-    name: 'Spatial & Attribute Query',
-    shortTitle: 'Query',
-    description: 'Search and filter features by SQL attribute rules or drawn geometry',
-    category: 'analysis',
-    isPinned: true,
-    isExpandedInToolbox: true
-  },
-  {
-    id: 'results',
-    name: 'Selected Features & Details',
-    shortTitle: 'Features',
-    description: 'Inspect individual properties or browse and filter multi-record query results',
-    category: 'core',
-    isPinned: true,
-    isExpandedInToolbox: true
-  },
-  {
-    id: 'measure',
-    name: 'Spatial Measurement Tools',
-    shortTitle: 'Measure',
-    description: 'Geodesic polyline distance, polygon area, and coordinate readout',
-    category: 'analysis',
-    isPinned: false,
-    isExpandedInToolbox: true
-  },
-  {
-    id: 'buffer',
-    name: 'Spatial Buffer & Notices',
-    shortTitle: 'Buffer',
-    description: 'Circular geodesic notification buffer rings around land parcels',
-    category: 'analysis',
-    isPinned: false,
-    isExpandedInToolbox: true
-  },
-  {
-    id: 'markup',
-    name: 'Spatial Markup & Sketch',
-    shortTitle: 'Markup',
-    description: 'Interactive annotations, pins, and polygon sketching with GeoJSON export',
-    category: 'cartography',
-    isPinned: false,
-    isExpandedInToolbox: false
-  },
-  {
-    id: 'bookmarks',
-    name: 'Spatial Bookmarks & Extents',
-    shortTitle: 'Bookmarks',
-    description: 'Saved viewpoints and extents across Victoria planning precincts',
-    category: 'cartography',
-    isPinned: false,
-    isExpandedInToolbox: false
-  },
-  {
-    id: 'export',
-    name: 'High-Res Map PNG Exporter',
-    shortTitle: 'Export',
-    description: 'Export map canvas as high-resolution PNG with scale and coordinates',
-    category: 'output',
-    isPinned: false,
-    isExpandedInToolbox: false
-  }
+  workflowsModule.toWebGISModule(),
+  layersModule.toWebGISModule(),
+  queryModule.toWebGISModule(),
+  resultsModule.toWebGISModule(),
+  measureModule.toWebGISModule(),
+  bufferModule.toWebGISModule(),
+  markupModule.toWebGISModule(),
+  bookmarksModule.toWebGISModule(),
+  printModule.toWebGISModule()
 ]
 
 /**
- * Component mapping for all registered modules.
+ * Canonical initial configuration for all contributed views across all modules.
  */
-export const MODULE_COMPONENTS: Record<string, Component> = {
-  workflows: WorkflowsModule,
-  layers: LayersModule,
-  query: QueryModule,
-  results: ResultsModule,
-  measure: MeasureModule,
-  buffer: BufferModule,
-  markup: MarkupModule,
-  bookmarks: BookmarksModule,
-  export: ExportModule,
-  toolbox: ToolboxModule
+export const INITIAL_VIEWS: WebGISView[] = moduleManager.getAllViews().map((v, idx) => ({
+  id: v.id,
+  moduleId: v.moduleId || v.id,
+  name: v.name,
+  shortTitle: v.shortTitle || v.name,
+  description: v.description || '',
+  category: (v.category || 'core') as any,
+  icon: v.icon,
+  placement: v.defaultPlacement,
+  defaultPlacement: v.defaultPlacement,
+  supportedPlacements: v.supportedPlacements,
+  order: v.defaultOrder ?? idx * 10
+}))
+
+/**
+ * Retrieve the active Svelte component for a module or view ID if already loaded and cached.
+ */
+export function getModuleComponent(id: string): Component | undefined {
+  return moduleManager.getCachedComponent(id)
 }
 
 /**
- * Retrieve the active Svelte component for a module ID.
+ * Asynchronously load the Svelte component for a module or view ID on demand.
  */
-export function getModuleComponent(id: string): Component | undefined {
-  return MODULE_COMPONENTS[id]
+export async function loadModuleComponent(id: string): Promise<Component> {
+  return moduleManager.loadComponent(id)
 }
 
 /**
  * Retrieve the module definition metadata by ID.
  */
 export function getModuleDefinition(id: string): WebGISModule | undefined {
-  return INITIAL_MODULES.find((m) => m.id === id)
+  return moduleManager.getModuleDefinition(id) || INITIAL_MODULES.find((m) => m.id === id)
 }
+
+/**
+ * Retrieve the view definition metadata by ID.
+ */
+export function getViewDefinition(id: string): WebGISView | undefined {
+  return INITIAL_VIEWS.find((v) => v.id === id)
+}
+
+export { moduleManager }

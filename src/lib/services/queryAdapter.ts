@@ -17,7 +17,10 @@ export async function executeLayerQuery(
   map: MapLibreMap | null = null
 ): Promise<QueryResultCollection> {
   const adapterName =
-    layer.data?.adapter || (layer.format === 'esri-feature' ? 'esri-rest' : 'geojson-client')
+    layer.data?.adapter ||
+    (layer.feature_service?.type === 'esri_rest' || layer.format === 'esri-feature'
+      ? 'esri-rest'
+      : 'geojson-client')
   const adapter = dataAdapterRegistry.getAdapter(adapterName)
   return adapter.query(layer, query, map)
 }
@@ -32,7 +35,10 @@ export async function identifyLayerAtCoordinate(
   map: MapLibreMap | null = null
 ): Promise<QueryResultFeature[]> {
   const adapterName =
-    layer.data?.adapter || (layer.format === 'esri-feature' ? 'esri-rest' : 'geojson-client')
+    layer.data?.adapter ||
+    (layer.feature_service?.type === 'esri_rest' || layer.format === 'esri-feature'
+      ? 'esri-rest'
+      : 'geojson-client')
   const adapter = dataAdapterRegistry.getAdapter(adapterName)
   return adapter.identify(layer, coordinate, point, map)
 }

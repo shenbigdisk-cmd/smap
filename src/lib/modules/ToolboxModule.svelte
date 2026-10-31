@@ -3,8 +3,8 @@
   import ModuleIcon from './ModuleIcon.svelte'
   import ModuleRenderer from './ModuleRenderer.svelte'
 
-  // Toolbox modules follow the user's custom module order from Settings
-  let toolboxModules = $derived(mapStore.modules.filter((m) => !m.isPinned))
+  // Toolbox views follow the user's custom view order from Settings
+  let toolboxViews = $derived(mapStore.toolboxViews)
 
   // At most ONE section can be active at any time, or null if closed
   let activeId = $derived(mapStore.activeToolboxModuleId)
@@ -17,30 +17,30 @@
 </script>
 
 <div class="toolbox-stack">
-  {#if toolboxModules.length === 0}
+  {#if toolboxViews.length === 0}
     <div class="empty-toolbox">
-      <p class="empty-text">All modules are currently pinned as top-level tabs.</p>
-      <p class="empty-hint">Manage and unpin tabs via your User Avatar menu → Settings &amp; Customization.</p>
+      <p class="empty-text">All views are currently pinned as primary tabs.</p>
+      <p class="empty-hint">Manage and unpin views via your User Avatar menu → Settings &amp; Customization.</p>
     </div>
   {/if}
 
-  {#each toolboxModules as mod (mod.id)}
-    {@const isOpen = activeId === mod.id}
+  {#each toolboxViews as view (view.id)}
+    {@const isOpen = activeId === view.id}
     <div class="section-item" class:active={isOpen}>
       <button
         type="button"
         class="section-header"
         class:active={isOpen}
-        data-module={mod.id}
-        onclick={() => toggleSection(mod.id)}
+        data-module={view.id}
+        onclick={() => toggleSection(view.id)}
         aria-expanded={isOpen}
-        title={mod.description}
+        title={view.description}
       >
         <div class="header-left">
           <div class="icon-wrap" class:active={isOpen}>
-            <ModuleIcon id={mod.id} size={13} />
+            <ModuleIcon id={view.icon || view.id} size={13} />
           </div>
-          <span class="section-title">{mod.name}</span>
+          <span class="section-title">{view.name}</span>
         </div>
 
         <div class="header-right">
@@ -63,7 +63,7 @@
 
       {#if isOpen}
         <div class="section-body">
-          <ModuleRenderer id={mod.id} />
+          <ModuleRenderer id={view.id} />
         </div>
       {/if}
     </div>

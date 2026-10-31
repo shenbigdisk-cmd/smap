@@ -3,35 +3,29 @@
 
   let newName = $state('')
   let newDesc = $state('')
-  let isAdding = $state(false)
+  let isAdding = $derived(mapStore.isAddingBookmark)
 
   function saveBookmark() {
     if (!newName.trim()) return
     mapStore.addCurrentViewAsBookmark(newName, newDesc)
     newName = ''
     newDesc = ''
-    isAdding = false
+    mapStore.isAddingBookmark = false
   }
 </script>
 
 <div class="bookmarks-panel">
-  <div class="panel-header">
-    <div class="header-left">
-      <span class="title">SPATIAL EXTENT BOOKMARKS</span>
-      <span class="subtitle">Quick navigation & saved planning viewpoints</span>
+  {#if mapStore.settings.layout === 'site' && !isAdding}
+    <div class="site-header-actions">
+      <button
+        type="button"
+        class="site-add-btn"
+        onclick={() => (mapStore.isAddingBookmark = true)}
+      >
+        + Bookmark Current View
+      </button>
     </div>
-    <button
-      class="add-btn"
-      onclick={() => (isAdding = !isAdding)}
-      title="Save current map view"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-      <span>{isAdding ? 'Cancel' : 'Bookmark View'}</span>
-    </button>
-  </div>
+  {/if}
 
   {#if isAdding}
     <div class="add-form">
@@ -49,7 +43,10 @@
         class="form-input"
       />
       <div class="form-actions">
-        <button class="save-btn" onclick={saveBookmark} disabled={!newName.trim()}>
+        <button type="button" class="cancel-btn" onclick={() => (mapStore.isAddingBookmark = false)}>
+          Cancel
+        </button>
+        <button type="button" class="save-btn" onclick={saveBookmark} disabled={!newName.trim()}>
           Save Bookmark
         </button>
       </div>
@@ -97,51 +94,32 @@
     gap: 14px;
   }
 
-  .panel-header {
+  .site-header-actions {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 1px solid var(--border-color, #e2e8f0);
-    padding-bottom: 8px;
-    gap: 8px;
+    justify-content: flex-end;
   }
 
-  .header-left {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .title {
+  .site-add-btn {
     font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted, #64748b);
-    letter-spacing: 0.05em;
-  }
-
-  .subtitle {
-    font-size: 11px;
-    color: var(--text-light, #94a3b8);
-  }
-
-  .add-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background-color: var(--bg-card-subtle);
+    font-weight: 600;
     color: var(--accent-primary);
+    background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 4px 8px;
+    cursor: pointer;
+  }
+
+  .cancel-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    border-radius: 4px;
+    padding: 6px 10px;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    flex-shrink: 0;
-    transition: all 0.15s;
-  }
-
-  .add-btn:hover {
-    background-color: var(--bg-active);
-    border-color: var(--accent-primary);
+    margin-right: 8px;
   }
 
   .add-form {

@@ -2,431 +2,356 @@
   import { mapStore } from '../stores/mapStore.svelte'
   import { MAP_CONFIG } from '../config/map.config'
   import { PLANNING_ZONES, PLANNING_OVERLAYS } from '../data/sampleData'
-  import type { BasemapId } from '../types'
+  import type { BasemapId, ServiceDefinition } from '../types'
 
   let legendExpanded = $state(false)
-  let expandedLayers = $state<Record<string, boolean>>({})
 
-  function toggleLayerFold(id: string) {
-    expandedLayers[id] = !expandedLayers[id]
+  let selectedServiceId = $derived(mapStore.layersConfigServiceId)
+  let selectedService = $derived<ServiceDefinition | undefined>(
+    mapStore.services.find((s) => s.id === selectedServiceId)
+  )
+
+  function openServiceConfig(serviceId: string) {
+    mapStore.openServiceConfig(serviceId)
+  }
+
+  function backToServicesList() {
+    mapStore.closeServiceConfig()
   }
 </script>
 
 <div class="layers-panel">
-  <!-- 1. Operational Layers (Top Priority) -->
-  <div class="layers-header">
-    <div class="header-text">
-      <span class="title">OPERATIONAL LAYERS</span>
-      <span class="subtitle">Folded by default. Click row to configure opacity.</span>
-    </div>
-  </div>
-
-  <div class="layer-list">
-    {#each mapStore.services as service (service.id)}
-      <div class="service-group">
-        <div class="service-header">
-          <div class="service-info">
-            <span class="service-badge {service.type}">{service.type.toUpperCase()}</span>
-            <span class="service-name" title={service.description || service.name}>{service.name}</span>
-          </div>
-          <span class="service-count">{service.layers.length} {service.layers.length === 1 ? 'layer' : 'layers'}</span>
+  {#if selectedServiceId && selectedService}
+    <!-- ========================================================================= -->
+    <!-- SERVICE CONFIG VIEW (Sublayer Visibility Only)                            -->
+    <!-- ========================================================================= -->
+    <div class="service-detail-view">
+      {#if mapStore.settings.layout === 'site'}
+        <!-- Back Navigation for Site layout -->
+        <div class="site-detail-nav">
+          <button
+            type="button"
+            class="back-btn"
+            onclick={backToServicesList}
+            title="Return to services list"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Services</span>
+          </button>
         </div>
+      {/if}
 
-        <div class="service-layers">
-          {#each service.layers as layer (layer.id)}
-            {@const isFolded = !expandedLayers[layer.id]}
-            <div class="layer-item" class:disabled={!layer.visible} class:expanded={!isFolded}>
-              <!-- Compact Main Row: Checkbox + Title + Chevron -->
-              <div class="layer-main-row">
-                <label class="layer-toggle-label">
-                  <input
-                    type="checkbox"
-                    checked={layer.visible}
-                    onchange={() => mapStore.toggleLayer(layer.id)}
-                  />
-                  <span class="layer-title" title={layer.title}>{layer.title}</span>
-                  {#if layer.data?.adapter === 'mvt-client'}
-                    <span class="layer-format-pill mvt" title="Vector Tile stream: in-viewport Identify only">MVT</span>
-                  {:else if layer.format === 'esri-feature' || layer.data?.adapter === 'esri-rest'}
-                    <span class="layer-format-pill esri" title="ArcGIS REST Feature Service">ESRI</span>
-                  {/if}
-                </label>
+      <!-- Sublayer checklist: only displayed when there are multiple sub-layers -->
+      <div class="service-detail-actions">
+        <button
+          type="button"
+          class="service-kill-toggle"
+          class:is-active={selectedService.enabled !== false}
+          onclick={() => mapStore.toggleServiceEnabled(selectedService.id)}
+        >
+          {selectedService.enabled !== false ? 'Disable Entire Service' : 'Enable Service'}
+        </button>
+      </div>
 
-                <button
-                  type="button"
-                  class="layer-chevron-btn"
-                  class:rotated={!isFolded}
-                  onclick={() => toggleLayerFold(layer.id)}
-                  title={isFolded ? 'Expand layer controls' : 'Collapse layer controls'}
-                  aria-label={isFolded ? `Expand ${layer.title}` : `Collapse ${layer.title}`}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-              </div>
+      {#if selectedService.layers.length > 0}
+        <div class="sublayers-list">
+          {#each selectedService.layers as layer (layer.id)}
+            {@const isLayerEnabled = layer.enabled !== false && selectedService.enabled !== false}
+            <div class="sublayer-item" class:disabled={!layer.visible || !isLayerEnabled}>
+              <label class="sublayer-toggle">
+                <input
+                  type="checkbox"
+                  checked={layer.visible && isLayerEnabled}
+                  disabled={!isLayerEnabled}
+                  onchange={() => mapStore.toggleLayer(layer.id)}
+                />
+                <span class="sublayer-name" title={layer.title}>{layer.title}</span>
+              </label>
 
-              <!-- Collapsible Details Zone: Opacity + Capabilities + Description -->
-              {#if !isFolded}
-                <div class="layer-details-zone">
-                  {#if layer.visible}
-                    <div class="layer-controls-row">
-                      <div class="opacity-control">
-                        <span class="control-label">Opacity: {Math.round(layer.opacity * 100)}%</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={layer.opacity}
-                          oninput={(e) => {
-                            const val = parseFloat((e.target as HTMLInputElement).value)
-                            mapStore.setLayerOpacity(layer.id, val)
-                          }}
-                          class="opacity-slider"
-                        />
-                      </div>
-                    </div>
-                  {/if}
-
-                  {#if layer.description}
-                    <p class="layer-description">{layer.description}</p>
-                  {/if}
-
-                  <!-- Capabilities Badge Line -->
-                  <div class="capabilities-row">
-                    <span class="cap-label">Capabilities:</span>
-                    {#if layer.capabilities?.identify}
-                      <span class="cap-tag active" title="Supports map-click feature identification">Identify</span>
-                    {/if}
-                    {#if layer.capabilities?.queryAttribute || layer.capabilities?.querySpatial}
-                      <span class="cap-tag active" title="Supports attribute SQL and spatial geometric filtering">Query</span>
-                    {:else}
-                      <span class="cap-tag muted" title="Vector tile in-viewport only; global query disabled">No Query</span>
-                    {/if}
-                    {#if layer.capabilities?.buffer}
-                      <span class="cap-tag active" title="Supports proximity buffer analysis">Buffer</span>
-                    {/if}
-                  </div>
-
-                  <!-- Layer Operations / Shortcuts -->
-                  <div class="layer-ops-row">
-                    {#if layer.capabilities?.queryAttribute || layer.capabilities?.querySpatial}
-                      <button
-                        type="button"
-                        class="layer-op-btn"
-                        onclick={() => mapStore.launchModule('query')}
-                        title="Query records in this layer"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <circle cx="11" cy="11" r="8"></circle>
-                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                        <span>Query</span>
-                      </button>
-                    {/if}
-                    {#if layer.capabilities?.buffer}
-                      <button
-                        type="button"
-                        class="layer-op-btn"
-                        onclick={() => mapStore.launchModule('buffer')}
-                        title="Buffer analysis"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <circle cx="12" cy="12" r="9"></circle>
-                          <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
-                        <span>Buffer</span>
-                      </button>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
+              <button
+                type="button"
+                class="sublayer-mute-btn"
+                class:muted={!isLayerEnabled}
+                onclick={() => mapStore.toggleLayerEnabled(layer.id)}
+                title={isLayerEnabled ? "Disable sublayer" : "Enable sublayer"}
+              >
+                {isLayerEnabled ? 'Active' : 'Disabled'}
+              </button>
             </div>
           {/each}
         </div>
-      </div>
-    {/each}
-  </div>
-
-  <!-- 2. Symbology Legend Accordion -->
-  <div class="legend-section">
-    <button
-      class="legend-header-btn"
-      onclick={() => (legendExpanded = !legendExpanded)}
-    >
-      <div class="legend-header-left">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        <span>MAP SYMBOLOGY LEGEND</span>
-      </div>
-      <svg
-        class="chevron"
-        class:rotated={legendExpanded}
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      >
-        <polyline points="6 9 12 15 18 9"></polyline>
-      </svg>
-    </button>
-
-    {#if legendExpanded}
-      <div class="legend-content">
-        <div class="legend-group">
-          <span class="group-title">Planning Scheme Zones</span>
-          <div class="swatches-grid">
-            {#each Object.values(PLANNING_ZONES) as zone}
-              <div class="legend-swatch-item">
-                <div
-                  class="swatch-color"
-                  style="background-color: {zone.fillColor}; border-color: {zone.strokeColor};"
-                ></div>
-                <div class="swatch-info">
-                  <span class="swatch-code">{zone.code}</span>
-                  <span class="swatch-name">{zone.name}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        </div>
-
-        <div class="legend-group">
-          <span class="group-title">Planning Overlays</span>
-          <div class="swatches-grid">
-            {#each Object.values(PLANNING_OVERLAYS) as overlay}
-              <div class="legend-swatch-item">
-                <div
-                  class="swatch-color pattern"
-                  style="background-color: {overlay.fillColor}; border-color: {overlay.strokeColor};"
-                ></div>
-                <div class="swatch-info">
-                  <span class="swatch-code">{overlay.code}</span>
-                  <span class="swatch-name">{overlay.name}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        </div>
-      </div>
-    {/if}
-  </div>
-
-  <!-- 3. Integrated Base Map Selector (Moved to Bottom & Made Compact) -->
-  <div class="basemap-section">
-    <div class="section-heading-row">
-      <span class="title">BASE MAP</span>
-      <span class="active-basemap-badge">
-        {MAP_CONFIG.basemaps.find((b) => b.id === mapStore.activeBasemapId)?.name || 'Standard'}
-      </span>
+      {/if}
     </div>
 
-    <div class="basemap-compact-grid">
-      {#each MAP_CONFIG.basemaps as b}
-        <button
-          class="basemap-compact-chip"
-          class:selected={mapStore.activeBasemapId === b.id}
-          onclick={() => mapStore.setBasemap(b.id as BasemapId)}
-          title={b.description}
-        >
-          <div class="mini-swatch" data-id={b.id}>
-            {#if b.id === 'esri-satellite'}
-              <div class="mini-sat"></div>
-            {:else if b.id === 'carto-dark'}
-              <div class="mini-dark"></div>
-            {:else if b.id === 'carto-voyager'}
-              <div class="mini-voyager"></div>
-            {:else}
-              <div class="mini-light"></div>
-            {/if}
-          </div>
-          <span class="basemap-chip-name">{b.name}</span>
-          {#if mapStore.activeBasemapId === b.id}
-            <span class="chip-check">✓</span>
+  {:else}
+    <!-- ========================================================================= -->
+    <!-- MAIN SERVICES LIST (Checkbox, Title, and Hover Config Button)             -->
+    <!-- ========================================================================= -->
+    <div class="services-list-container">
+      {#each mapStore.services as service (service.id)}
+        {@const isServiceEnabled = service.enabled !== false}
+        <div class="service-item" class:disabled={!service.visible || !isServiceEnabled} class:offline={!isServiceEnabled}>
+          <label class="service-toggle">
+            <input
+              type="checkbox"
+              checked={service.visible && isServiceEnabled}
+              disabled={!isServiceEnabled}
+              onchange={() => mapStore.toggleService(service.id)}
+            />
+            <span class="service-name" title={service.name}>{service.name}</span>
+          </label>
+
+          {#if !isServiceEnabled}
+            <button
+              type="button"
+              class="service-status-pill offline"
+              onclick={() => mapStore.toggleServiceEnabled(service.id, true)}
+              title="Service disabled. Click to re-enable."
+            >
+              Offline
+            </button>
+          {:else if service.status === 'error'}
+            <span class="service-status-pill error" title={service.error || 'Connection error'}>
+              Error
+            </span>
           {/if}
-        </button>
+
+          {#if service.layers.length > 1}
+            <button
+              type="button"
+              class="config-btn"
+              onclick={() => openServiceConfig(service.id)}
+              title="Configure sub-layers"
+              aria-label="Configure sub-layers"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          {/if}
+        </div>
       {/each}
     </div>
-  </div>
+
+    <!-- 3. Symbology Legend Accordion -->
+    <div class="legend-section">
+      <button
+        class="legend-header-btn"
+        onclick={() => (legendExpanded = !legendExpanded)}
+      >
+        <div class="legend-header-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>MAP SYMBOLOGY LEGEND</span>
+        </div>
+        <svg
+          class="chevron"
+          class:rotated={legendExpanded}
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+
+      {#if legendExpanded}
+        <div class="legend-content">
+          <div class="legend-group">
+            <span class="group-title">Planning Scheme Zones</span>
+            <div class="swatches-grid">
+              {#each Object.values(PLANNING_ZONES) as zone}
+                <div class="legend-swatch-item">
+                  <div
+                    class="swatch-color"
+                    style="background-color: {zone.fillColor}; border-color: {zone.strokeColor};"
+                  ></div>
+                  <div class="swatch-info">
+                    <span class="swatch-code">{zone.code}</span>
+                    <span class="swatch-name">{zone.name}</span>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="legend-group">
+            <span class="group-title">Planning Overlays</span>
+            <div class="swatches-grid">
+              {#each Object.values(PLANNING_OVERLAYS) as overlay}
+                <div class="legend-swatch-item">
+                  <div
+                    class="swatch-color pattern"
+                    style="background-color: {overlay.fillColor}; border-color: {overlay.strokeColor};"
+                  ></div>
+                  <div class="swatch-info">
+                    <span class="swatch-code">{overlay.code}</span>
+                    <span class="swatch-name">{overlay.name}</span>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- 4. Compact Basemap Dropdown (Stays pinned at bottom) -->
+    <div class="basemap-compact-section">
+      <div class="basemap-dropdown-row">
+        <div class="basemap-label-group">
+          <span
+            class="basemap-swatch-indicator"
+            data-basemap={mapStore.activeBasemapId}
+          ></span>
+          <label for="basemap-quick-select" class="basemap-label">BASEMAP</label>
+        </div>
+
+        <select
+          id="basemap-quick-select"
+          class="basemap-dropdown-select"
+          value={mapStore.activeBasemapId}
+          onchange={(e) => mapStore.setBasemap((e.target as HTMLSelectElement).value as BasemapId)}
+        >
+          {#each MAP_CONFIG.basemaps as b}
+            <option value={b.id}>{b.name}</option>
+          {/each}
+        </select>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
   .layers-panel {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-  }
-
-  .layers-header {
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 6px;
-  }
-
-  .title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
-    display: block;
-  }
-
-  .subtitle {
-    font-size: 10px;
-    color: var(--text-light);
-  }
-
-  /* Compact Collapsible Layer List */
-  .layer-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .service-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    background-color: var(--bg-card-subtle);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 8px 10px;
-  }
-
-  .service-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 6px;
-    border-bottom: 1px dashed var(--border-color);
-  }
-
-  .service-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .service-name {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-main);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .service-badge {
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
-    letter-spacing: 0.04em;
-    flex-shrink: 0;
-  }
-
-  .service-badge.esri-rest {
-    background-color: rgba(37, 99, 235, 0.15);
-    color: #2563eb;
-    border: 1px solid rgba(37, 99, 235, 0.3);
-  }
-
-  .service-badge.geojson-static {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.3);
-  }
-
-  .service-badge.vector-tile {
-    background-color: rgba(14, 165, 233, 0.15);
-    color: #0ea5e9;
-    border: 1px solid rgba(14, 165, 233, 0.3);
-  }
-
-  .service-count {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .service-layers {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 4px;
-  }
-
-  .capabilities-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    margin-top: 2px;
-  }
-
-  .cap-label {
-    color: var(--text-muted);
-    font-weight: 600;
-  }
-
-  .cap-tag {
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 600;
-  }
-
-  .cap-tag.active {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .cap-tag.muted {
-    background-color: rgba(100, 116, 139, 0.15);
-    color: #64748b;
-  }
-
-  .layer-format-pill.mvt {
-    background-color: rgba(14, 165, 233, 0.15);
-    color: #0ea5e9;
-    border: 1px solid rgba(14, 165, 233, 0.3);
-  }
-
-  .layer-item {
-    background-color: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    transition: all 0.15s ease;
+    flex: 1;
+    min-height: 100%;
+    height: 100%;
+    gap: 10px;
+    box-sizing: border-box;
     overflow: hidden;
   }
 
-  .layer-item.disabled {
-    opacity: 0.65;
-    background-color: var(--bg-card-subtle);
+  /* Operational Services List: Clean flat rows (no card/box wrappers) */
+  .services-list-container {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding-right: 2px;
   }
 
-  .layer-main-row {
+  .service-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
-    cursor: pointer;
+    padding: 7px 8px;
     min-height: 32px;
-    user-select: none;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 4px;
     transition: background-color 0.12s ease;
   }
 
-  .layer-main-row:hover {
+  .service-item:hover {
     background-color: var(--bg-subtle);
   }
 
-  .layer-toggle-label {
+  .service-item.disabled {
+    opacity: 0.55;
+  }
+
+  .service-item.offline {
+    opacity: 0.45;
+    background-color: var(--bg-card-subtle);
+  }
+
+  .service-status-pill {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .service-status-pill.offline {
+    color: var(--text-muted);
+    border-style: dashed;
+  }
+
+  .service-status-pill.error {
+    color: #ef4444;
+    border-color: #fca5a5;
+    background-color: #fef2f2;
+  }
+
+  .service-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 0;
+  }
+
+  .service-kill-toggle {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .service-kill-toggle:hover {
+    color: var(--text-main);
+    border-color: var(--accent-primary);
+  }
+
+  .sublayer-mute-btn {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .sublayer-mute-btn.muted {
+    color: #ef4444;
+    border-style: dashed;
+  }
+
+  .site-detail-nav {
+    display: flex;
+    align-items: center;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .service-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -435,7 +360,7 @@
     cursor: pointer;
   }
 
-  .layer-toggle-label input[type="checkbox"] {
+  .service-toggle input[type="checkbox"] {
     width: 15px;
     height: 15px;
     accent-color: var(--accent-primary);
@@ -443,7 +368,7 @@
     flex-shrink: 0;
   }
 
-  .layer-title {
+  .service-name {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-main);
@@ -452,124 +377,139 @@
     text-overflow: ellipsis;
   }
 
-  .layer-chevron-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 3px;
+  /* Config Button: hidden by default, revealed on hover or keyboard focus */
+  .config-btn {
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
-    transition: transform 0.15s ease, color 0.12s ease;
-    flex-shrink: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease, color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
   }
 
-  .layer-chevron-btn:hover {
-    color: var(--text-main);
+  .service-item:hover .config-btn,
+  .config-btn:focus-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .config-btn {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+
+  .config-btn:hover {
+    color: var(--accent-primary);
     background-color: var(--bg-subtle);
+    border-color: var(--accent-primary);
   }
 
-  .layer-chevron-btn.rotated {
-    transform: rotate(180deg);
-  }
-
-  .layer-details-zone {
-    padding: 8px 10px 10px 10px;
-    border-top: 1px solid var(--border-subtle);
-    background-color: var(--bg-panel);
+  /* ========================================================================= */
+  /* SERVICE CONFIG VIEW (Sublayer Visibility Only)                            */
+  /* ========================================================================= */
+  .service-detail-view {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
     gap: 6px;
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    cursor: pointer;
+    transition: all 0.12s;
   }
 
-  .layer-controls-row {
-    padding-top: 2px;
+  .back-btn:hover {
+    background-color: var(--bg-subtle);
+    border-color: var(--accent-primary);
   }
 
-  .opacity-control {
+  .sublayers-list {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding-right: 2px;
+  }
+
+  .sublayer-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    padding: 7px 8px;
+    min-height: 32px;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    transition: background-color 0.12s ease;
   }
 
-  .control-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  .sublayer-item:hover {
+    background-color: var(--bg-subtle);
   }
 
-  .opacity-slider {
+  .sublayer-item.disabled {
+    opacity: 0.55;
+  }
+
+  .sublayer-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 1;
-    height: 4px;
-    accent-color: var(--accent-primary);
+    min-width: 0;
     cursor: pointer;
   }
 
-  .layer-description {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin: 0;
-    line-height: 1.35;
-  }
-
-  .layer-format-pill {
-    font-size: 8px;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 3px;
-    letter-spacing: 0.04em;
+  .sublayer-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-primary);
+    cursor: pointer;
     flex-shrink: 0;
   }
 
-  .layer-format-pill.esri {
-    background-color: rgba(37, 99, 235, 0.15);
-    color: #2563eb;
-    border: 1px solid rgba(37, 99, 235, 0.3);
-  }
-
-  :global([data-color-mode="dark"]) .layer-format-pill.esri {
-    background-color: rgba(96, 165, 250, 0.18);
-    color: #93c5fd;
-    border-color: rgba(96, 165, 250, 0.35);
-  }
-
-  .layer-ops-row {
-    display: flex;
-    gap: 5px;
-    margin-top: 4px;
-  }
-
-  .layer-op-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 7px;
-    font-size: 10px;
+  .sublayer-name {
+    font-size: 12px;
     font-weight: 600;
-    color: var(--text-muted);
-    background-color: var(--bg-subtle);
-    border: 1px solid var(--border-color);
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.12s ease;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .layer-op-btn:hover {
-    color: var(--accent-primary);
-    border-color: var(--accent-primary);
-    background-color: var(--accent-subtle);
-  }
-
-  /* Legend */
+  /* ========================================================================= */
+  /* SYMBOLOGY LEGEND SECTION                                                  */
+  /* ========================================================================= */
   .legend-section {
-    background-color: var(--bg-card-subtle);
     border: 1px solid var(--border-color);
     border-radius: 6px;
+    background-color: var(--bg-card);
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .legend-header-btn {
@@ -581,19 +521,26 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    transition: background-color 0.12s;
+  }
+
+  .legend-header-btn:hover {
+    background-color: var(--bg-subtle);
     color: var(--text-main);
   }
 
   .legend-header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .chevron {
-    transition: transform 0.2s ease;
+    transition: transform 0.15s ease;
   }
 
   .chevron.rotated {
@@ -601,169 +548,141 @@
   }
 
   .legend-content {
-    padding: 8px 12px 12px 12px;
-    border-top: 1px solid var(--border-color);
+    padding: 8px 10px 10px;
+    border-top: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    background-color: var(--bg-card);
+    gap: 8px;
+    max-height: 160px;
+    overflow-y: auto;
   }
 
   .legend-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
   .group-title {
     font-size: 10px;
     font-weight: 700;
     color: var(--text-muted);
-    text-transform: uppercase;
   }
 
   .swatches-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
   }
 
   .legend-swatch-item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
+    padding: 2px 4px;
   }
 
   .swatch-color {
-    width: 16px;
-    height: 14px;
+    width: 10px;
+    height: 10px;
     border-radius: 2px;
-    border: 1.5px solid transparent;
+    border: 1px solid;
     flex-shrink: 0;
   }
 
   .swatch-info {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
-    overflow: hidden;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .swatch-code {
-    font-size: 11px;
+    font-size: 9.5px;
     font-weight: 700;
     color: var(--text-main);
-    width: 44px;
-    flex-shrink: 0;
   }
 
   .swatch-name {
-    font-size: 11px;
+    font-size: 9px;
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  /* Compact Basemap Section at Bottom */
-  .basemap-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-top: 6px;
-    border-top: 1px solid var(--border-color);
+  /* ========================================================================= */
+  /* COMPACT BASEMAP DROPDOWN SECTION (Pinned to bottom)                       */
+  /* ========================================================================= */
+  .basemap-compact-section {
+    margin-top: auto;
+    padding: 7px 10px;
+    background-color: var(--bg-card-subtle);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    flex-shrink: 0;
   }
 
-  .section-heading-row {
+  .basemap-dropdown-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 10px;
   }
 
-  .active-basemap-badge {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--accent-primary);
-    background-color: var(--bg-active);
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-
-  .basemap-compact-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+  .basemap-label-group {
+    display: flex;
+    align-items: center;
     gap: 6px;
   }
 
-  .basemap-compact-chip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+  .basemap-swatch-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .basemap-swatch-indicator[data-basemap="carto-light"] {
+    background-color: #f8fafc;
+  }
+
+  .basemap-swatch-indicator[data-basemap="carto-voyager"] {
+    background-color: #cbd5e1;
+  }
+
+  .basemap-swatch-indicator[data-basemap="carto-dark"] {
+    background-color: #0f172a;
+  }
+
+  .basemap-swatch-indicator[data-basemap="esri-satellite"] {
+    background-color: #065f46;
+  }
+
+  .basemap-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .basemap-dropdown-select {
+    flex: 1;
+    max-width: 190px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-main);
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
-    text-align: left;
-    transition: all 0.12s ease;
+    outline: none;
+    transition: border-color 0.12s;
   }
 
-  .basemap-compact-chip:hover {
+  .basemap-dropdown-select:focus {
     border-color: var(--accent-primary);
-    background-color: var(--bg-subtle);
-  }
-
-  .basemap-compact-chip.selected {
-    border-color: var(--accent-primary);
-    background-color: var(--bg-active);
-    color: var(--accent-primary);
-    font-weight: 600;
-  }
-
-  .mini-swatch {
-    width: 20px;
-    height: 16px;
-    border-radius: 3px;
-    overflow: hidden;
-    flex-shrink: 0;
-    border: 1px solid rgba(0, 0, 0, 0.15);
-  }
-
-  .mini-sat {
-    width: 100%;
-    height: 100%;
-    background-color: #0e7490;
-  }
-
-  .mini-dark {
-    width: 100%;
-    height: 100%;
-    background-color: #1e293b;
-  }
-
-  .mini-voyager {
-    width: 100%;
-    height: 100%;
-    background-color: #86efac;
-  }
-
-  .mini-light {
-    width: 100%;
-    height: 100%;
-    background-color: #f1f5f9;
-  }
-
-  .basemap-chip-name {
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-  }
-
-  .chip-check {
-    font-size: 11px;
-    font-weight: bold;
-    color: var(--accent-primary);
   }
 </style>

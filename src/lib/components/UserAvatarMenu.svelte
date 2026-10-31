@@ -75,7 +75,8 @@
 
   function clearActiveSelection() {
     isOpen = false
-    mapStore.selectedParcel = null
+    mapStore.clearSelection()
+    mapStore.clearIdentifyResults()
     mapStore.searchQuery = ''
     mapStore.searchResults = []
     mapStore.closeSidebar()

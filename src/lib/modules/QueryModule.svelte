@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { mapStore } from '../stores/mapStore.svelte'
   import { executeLayerQuery } from '../services/queryAdapter'
   import { SAMPLE_PARCELS } from '../data/sampleData'
@@ -37,10 +38,14 @@
 
   // Attribute Rules State
   let availableFields = $derived<LayerFieldConfig[]>(
-    selectedLayer?.queryConfig?.fields || [
-      { key: 'address', label: 'Property Address', type: 'string' },
-      { key: 'spi', label: 'Standard Parcel ID', type: 'string' }
-    ]
+    selectedLayer?.queryConfig?.fields ||
+    selectedLayer?.data?.fields ||
+    (selectedLayer?.feature_service?.queryable_fields
+      ? selectedLayer.feature_service.queryable_fields.map((f) => ({ key: f, label: f, type: 'string' }))
+      : [
+          { key: 'address', label: 'Property Address', type: 'string' },
+          { key: 'spi', label: 'Standard Parcel ID', type: 'string' }
+        ])
   )
 
   let attributeRules = $state<AttributeFilterRule[]>([
@@ -56,12 +61,40 @@
     }
   })
 
-  // Spatial Criteria State
+  // Spatial Criteria State using live TerraDraw geometry
   let spatialMode = $state<QuerySpatialMode>('bbox')
   let radiusMeters = $state<number>(500)
-  let spatialFilter = $state<SpatialFilterCriteria | null>(null)
-  let isDrawingSpatial = $state(false)
-  let draftVertices = $state<[number, number][]>([])
+
+  let isDrawingSpatial = $derived(Boolean(mapStore.activeQueryTool))
+
+  let spatialFilter = $derived.by<SpatialFilterCriteria | null>(() => {
+    if (!mapStore.querySpatialGeometry) return null
+    const geom = mapStore.querySpatialGeometry
+    if (geom.type === 'Polygon' && Array.isArray(geom.coordinates?.[0])) {
+      const ring = geom.coordinates[0]
+      // If 5 coordinates (closed 4-vertex rectangle box), extract bounding envelope
+      if (ring.length === 5) {
+        const xs = ring.map((pt: [number, number]) => pt[0])
+        const ys = ring.map((pt: [number, number]) => pt[1])
+        const minx = Math.min(...xs)
+        const maxx = Math.max(...xs)
+        const miny = Math.min(...ys)
+        const maxy = Math.max(...ys)
+        return {
+          mode: 'bbox',
+          geometry: [minx, miny, maxx, maxy]
+        }
+      }
+      return {
+        mode: 'polygon',
+        geometry: geom
+      }
+    }
+    return {
+      mode: 'polygon',
+      geometry: geom
+    }
+  })
 
   // Query Execution State
   let queryError = $state<string | null>(null)
@@ -83,115 +116,34 @@
     }
   }
 
-  // Spatial Drawing Tool Registration (Guardrail Integrated)
+  // Interactive Spatial Drawing with TerraDraw (same smooth visual feedback as Markup)
   function startSpatialDrawing(mode: QuerySpatialMode) {
     spatialMode = mode
-    isDrawingSpatial = true
-    draftVertices = []
 
-    if (mode === 'viewport') {
-      if (mapStore.map) {
-        const bounds = mapStore.map.getBounds()
-        spatialFilter = {
-          mode: 'bbox',
-          geometry: [
-            bounds.getWest(),
-            bounds.getSouth(),
-            bounds.getEast(),
-            bounds.getNorth()
-          ]
-        }
-      }
-      isDrawingSpatial = false
-      return
-    }
-
-    if (mode === 'selected') {
+    if (mode === 'bbox') {
+      mapStore.setQueryDrawTool('rectangle')
+    } else if (mode === 'polygon') {
+      mapStore.setQueryDrawTool('polygon')
+    } else if (mode === 'radius') {
+      mapStore.setQueryDrawTool('circle')
+    } else if (mode === 'viewport') {
+      mapStore.setQuerySpatialViewport()
+    } else if (mode === 'selected') {
       if (mapStore.selectedParcel) {
-        spatialFilter = {
-          mode: 'polygon',
-          geometry: mapStore.selectedParcel.geometry
-        }
+        mapStore.setQuerySpatialParcel(mapStore.selectedParcel)
       }
-      isDrawingSpatial = false
-      return
     }
-
-    mapStore.registerMapHandler({
-      id: `query-spatial-${mode}`,
-      moduleId: 'query',
-      cursor: 'crosshair',
-      hint:
-        mode === 'radius'
-          ? 'Click map to place search center'
-          : mode === 'bbox'
-            ? 'Click first corner, then opposite corner'
-            : 'Click map to add polygon vertices. Press Enter to finish.',
-      onClick: (coord) => {
-        if (mode === 'radius') {
-          spatialFilter = {
-            mode: 'radius',
-            center: coord,
-            radiusMeters: radiusMeters
-          }
-          isDrawingSpatial = false
-          mapStore.deactivateMapHandler('query')
-        } else if (mode === 'bbox') {
-          draftVertices = [...draftVertices, coord]
-          if (draftVertices.length >= 2) {
-            const minx = Math.min(draftVertices[0][0], draftVertices[1][0])
-            const maxx = Math.max(draftVertices[0][0], draftVertices[1][0])
-            const miny = Math.min(draftVertices[0][1], draftVertices[1][1])
-            const maxy = Math.max(draftVertices[0][1], draftVertices[1][1])
-            spatialFilter = {
-              mode: 'bbox',
-              geometry: [minx, miny, maxx, maxy]
-            }
-            isDrawingSpatial = false
-            draftVertices = []
-            mapStore.deactivateMapHandler('query')
-          }
-        } else if (mode === 'polygon') {
-          draftVertices = [...draftVertices, coord]
-          if (draftVertices.length >= 3) {
-            spatialFilter = {
-              mode: 'polygon',
-              geometry: {
-                type: 'Polygon',
-                coordinates: [[...draftVertices, draftVertices[0]]]
-              }
-            }
-          }
-        }
-      },
-      onKeyDown: (e) => {
-        if (e.key === 'Enter' && mode === 'polygon' && draftVertices.length >= 3) {
-          spatialFilter = {
-            mode: 'polygon',
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[...draftVertices, draftVertices[0]]]
-            }
-          }
-          isDrawingSpatial = false
-          draftVertices = []
-          mapStore.deactivateMapHandler('query')
-        }
-      },
-      onDeactivate: () => {
-        isDrawingSpatial = false
-        draftVertices = []
-      }
-    })
   }
 
   function clearSpatialFilter() {
-    spatialFilter = null
-    draftVertices = []
-    if (isDrawingSpatial) {
-      mapStore.deactivateMapHandler('query')
-    }
+    mapStore.clearQuerySpatialGeometry()
   }
+
+  onDestroy(() => {
+    if (mapStore.activeQueryTool) {
+      mapStore.setQueryDrawTool(null)
+    }
+  })
 
   async function handleRunQuery() {
     if (!selectedLayer) return
@@ -241,14 +193,6 @@
 </script>
 
 <div class="query-panel">
-  <!-- Header -->
-  <div class="query-header">
-    <div class="title-row">
-      <h2 class="title">SPATIAL & ATTRIBUTE QUERY</h2>
-      <span class="subtitle">Search records using SQL attribute filters and geometry</span>
-    </div>
-  </div>
-
   <!-- Target Layer Selection -->
   <div class="section-box">
     <label class="section-label" for="query-target-layer">
@@ -530,7 +474,11 @@
       <button
         type="button"
         class="view-results-link"
-        onclick={() => (mapStore.activeTab = 'results')}
+        onclick={() => {
+          mapStore.activeFeatureSource = 'query'
+          mapStore.featuresViewMode = 'list'
+          mapStore.activeTab = 'results'
+        }}
       >
         View in Features &rarr;
       </button>
@@ -548,27 +496,6 @@
     color: var(--text-main);
   }
 
-  .query-header {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .title {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    margin: 0;
-  }
-
-  .subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
 
   .section-box {
     display: flex;

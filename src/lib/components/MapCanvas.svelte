@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount, onDestroy, untrack } from 'svelte'
   import maplibregl, { type MapMouseEvent } from 'maplibre-gl'
   import 'maplibre-gl/dist/maplibre-gl.css'
   import {
@@ -26,7 +26,9 @@
     ZONE_POLYGONS_GEOJSON
   } from '../data/sampleData'
   import { formatArea, formatCoordinates, formatDistance } from '../utils/geodesy'
-  import { getInitialMapViewState, initUrlStateSync, updateUrlHash } from '../utils/urlState'
+  import { getInitialMapViewState, initUrlStateSync } from '../utils/urlState'
+  import { moduleManager } from '../modules/registry'
+  import IdentifyPopup from './IdentifyPopup.svelte'
 
   let mapContainer: HTMLDivElement | null = null
   let map: maplibregl.Map | null = null
@@ -77,14 +79,15 @@
       },
       center: initialState.center,
       zoom: initialState.zoom,
-      pitch: mapStore.is3dActive ? 55 : 0,
-      bearing: mapStore.is3dActive ? -18 : 0,
+      pitch: initialState.pitch ?? (mapStore.is3dActive ? 55 : 0),
+      bearing: initialState.bearing ?? (mapStore.is3dActive ? -18 : 0),
       maxPitch: mapStore.is3dActive ? 85 : 0,
       attributionControl: false,
       aroundCenter: false as any,
       dragRotate: mapStore.is3dActive as any,
-      touchPitch: mapStore.is3dActive as any
-    })
+      touchPitch: mapStore.is3dActive as any,
+      preserveDrawingBuffer: true
+    } as any)
 
     if (initialState.parcelId) {
       mapStore.selectParcelById(initialState.parcelId)
@@ -139,8 +142,8 @@
             mapStore.activeHandler.onMouseMove(coord, e)
           }
           map.getCanvas().style.cursor = mapStore.activeHandler.cursor || 'crosshair'
-        } else if (!mapStore.measurement.type && !mapStore.activeMarkupTool) {
-          const hovered = map.getLayer('layer-parcels-fill')
+        } else if (!mapStore.measurement.type && !mapStore.activeMarkupTool && !mapStore.activeQueryTool) {
+          const hovered = map.getLayer('layer-parcels-fill') && mapStore.isLayerVisible('layer-parcels')
             ? map.queryRenderedFeatures(e.point, { layers: ['layer-parcels-fill'] })
             : []
           map.getCanvas().style.cursor = hovered.length > 0 ? 'pointer' : ''
@@ -166,7 +169,7 @@
     })
 
     map.on('moveend', () => {
-      updateUrlHash()
+      mapStore.saveMapExtent()
     })
 
     // Map Click Interaction
@@ -186,8 +189,8 @@
         return
       }
 
-      // 3. Active markup sketch mode -> TerraDraw handles it, avoid parcel identification!
-      if (mapStore.activeMarkupTool) {
+      // 3. Active markup or query sketch mode -> TerraDraw handles it, avoid parcel identification!
+      if (mapStore.activeMarkupTool || mapStore.activeQueryTool) {
         return
       }
 
@@ -360,12 +363,28 @@
     if (mapStore.activeHandler?.onKeyDown) {
       mapStore.activeHandler.onKeyDown(e)
     }
+
+    // Contributed module shortcuts (disabled while editing text inputs)
+    const target = e.target as HTMLElement | null
+    const isEditing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+    if (!isEditing) {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey
+      for (const sc of moduleManager.getShortcuts()) {
+        const key = sc.key.toLowerCase()
+        if (key === 'ctrl+p' && isCtrlOrCmd && e.key.toLowerCase() === 'p') {
+          e.preventDefault()
+          sc.action(moduleManager.createContext('keyboard'))
+          return
+        }
+      }
+    }
   }
 
   function setupOperationalLayers() {
     if (!map || !map.getStyle()) return
 
     // 1. Planning Scheme Zones
+    const zonesVis = mapStore.isLayerVisible('layer-zones') ? 'visible' : 'none'
     if (!map.getSource('zones-source')) {
       map.addSource('zones-source', {
         type: 'geojson',
@@ -377,6 +396,9 @@
         id: 'layer-zones-fill',
         type: 'fill',
         source: 'zones-source',
+        layout: {
+          visibility: zonesVis
+        },
         paint: {
           'fill-color': ['get', 'color'],
           'fill-opacity': 0.5
@@ -388,6 +410,9 @@
         id: 'layer-zones-outline',
         type: 'line',
         source: 'zones-source',
+        layout: {
+          visibility: zonesVis
+        },
         paint: {
           'line-color': ['get', 'stroke'],
           'line-width': 1.5,
@@ -397,6 +422,7 @@
     }
 
     // 2. Cadastre Parcels
+    const parcelsVis = mapStore.isLayerVisible('layer-parcels') ? 'visible' : 'none'
     const parcelsGeoJson = {
       type: 'FeatureCollection' as const,
       features: SAMPLE_PARCELS.map((p) => ({
@@ -423,6 +449,9 @@
         id: 'layer-parcels-fill',
         type: 'fill',
         source: 'parcels-source',
+        layout: {
+          visibility: parcelsVis
+        },
         paint: {
           'fill-color': '#0284c7',
           'fill-opacity': 0.15
@@ -434,6 +463,9 @@
         id: 'layer-parcels-line',
         type: 'line',
         source: 'parcels-source',
+        layout: {
+          visibility: parcelsVis
+        },
         paint: {
           'line-color': '#0369a1',
           'line-width': 2
@@ -442,6 +474,7 @@
     }
 
     // 3. Planning Scheme Overlays
+    const overlaysVis = mapStore.isLayerVisible('layer-overlays') ? 'visible' : 'none'
     if (!map.getSource('overlays-source')) {
       map.addSource('overlays-source', {
         type: 'geojson',
@@ -453,6 +486,9 @@
         id: 'layer-overlays-fill',
         type: 'fill',
         source: 'overlays-source',
+        layout: {
+          visibility: overlaysVis
+        },
         paint: {
           'fill-color': ['get', 'color'],
           'fill-opacity': 0.45
@@ -464,6 +500,9 @@
         id: 'layer-overlays-line',
         type: 'line',
         source: 'overlays-source',
+        layout: {
+          visibility: overlaysVis
+        },
         paint: {
           'line-color': ['get', 'stroke'],
           'line-width': 2,
@@ -473,6 +512,7 @@
     }
 
     // 4. Municipal Boundaries (LGA)
+    const lgaVis = mapStore.isLayerVisible('layer-lga') ? 'visible' : 'none'
     if (!map.getSource('lga-source')) {
       map.addSource('lga-source', {
         type: 'geojson',
@@ -484,6 +524,9 @@
         id: 'layer-lga-line',
         type: 'line',
         source: 'lga-source',
+        layout: {
+          visibility: lgaVis
+        },
         paint: {
           'line-color': '#64748b',
           'line-width': 2.5,
@@ -492,40 +535,11 @@
       })
     }
 
-    // 5. Selected Parcel Highlight Layer
-    if (!map.getSource('selected-parcel-source')) {
-      map.addSource('selected-parcel-source', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: []
-        }
-      })
-    }
-    if (!map.getLayer('selected-parcel-fill')) {
-      map.addLayer({
-        id: 'selected-parcel-fill',
-        type: 'fill',
-        source: 'selected-parcel-source',
-        paint: {
-          'fill-color': '#f59e0b',
-          'fill-opacity': 0.4
-        }
-      })
-    }
-    if (!map.getLayer('selected-parcel-outline')) {
-      map.addLayer({
-        id: 'selected-parcel-outline',
-        type: 'line',
-        source: 'selected-parcel-source',
-        paint: {
-          'line-color': '#d97706',
-          'line-width': 3
-        }
-      })
-    }
+    // 5. Selected / Current Feature Highlight Layer
+    setupSelectionHighlightLayers()
 
     // 6. 3D Architectural Buildings Extrusion
+    const b3dVis = mapStore.isLayerVisible('layer-buildings-3d') ? 'visible' : 'none'
     if (!map.getSource('buildings-3d-source')) {
       map.addSource('buildings-3d-source', {
         type: 'geojson',
@@ -537,6 +551,9 @@
         id: 'layer-3d-buildings',
         type: 'fill-extrusion',
         source: 'buildings-3d-source',
+        layout: {
+          visibility: b3dVis
+        },
         paint: {
           'fill-extrusion-color': '#94a3b8',
           'fill-extrusion-height': ['get', 'height'],
@@ -547,6 +564,7 @@
     }
 
     // 7. Public Transport Vector Tiles (Demonstrates MVT with Identify-only capability)
+    const transportVis = mapStore.isLayerVisible('layer-transport') ? 'visible' : 'none'
     if (!map.getSource('transport-mvt-source')) {
       map.addSource('transport-mvt-source', {
         type: 'vector',
@@ -559,6 +577,9 @@
         type: 'line',
         source: 'transport-mvt-source',
         'source-layer': 'transportation',
+        layout: {
+          visibility: transportVis
+        },
         paint: {
           'line-color': '#0284c7',
           'line-width': 2
@@ -567,25 +588,211 @@
     }
   }
 
+  function setupServiceLayers() {
+    if (!map || !map.getStyle()) return
+
+    const beforeId = map.getLayer('selected-parcel-casing')
+      ? 'selected-parcel-casing'
+      : map.getLayer('buffer-fill')
+        ? 'buffer-fill'
+        : undefined
+
+    for (const layer of mapStore.layers) {
+      if (!layer.render) continue
+
+      const sourceId = `src-${layer.id}`
+
+      // 1. ArcGIS MapServer Dynamic Export
+      if (layer.render.type === 'esri_export') {
+        const rawUrl = layer.render.url || layer.url
+        if (!rawUrl) continue
+
+        const baseUrl = rawUrl.replace(/\/export\/?$/, '')
+        let sublayerParam = 'show:0'
+        if (layer.render.sublayers && layer.render.sublayers.length > 0) {
+          sublayerParam = `show:${layer.render.sublayers.join(',')}`
+        } else if (layer.render.layers !== undefined) {
+          const lStr = String(layer.render.layers)
+          sublayerParam = lStr.startsWith('show:') ? lStr : `show:${lStr}`
+        } else if (layer.serviceLayerId !== undefined) {
+          sublayerParam = `show:${layer.serviceLayerId}`
+        }
+
+        const tileUrl = `${baseUrl}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image&layers=${sublayerParam}`
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: 'raster',
+            tiles: [tileUrl],
+            tileSize: 256,
+            minzoom: layer.render.minzoom ?? 0,
+            maxzoom: layer.render.maxzoom ?? 22
+          })
+        }
+
+        if (!map.getLayer(layer.id)) {
+          map.addLayer(
+            {
+              id: layer.id,
+              type: 'raster',
+              source: sourceId,
+              paint: {
+                'raster-opacity': layer.opacity ?? 0.85
+              },
+              layout: {
+                visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+              }
+            },
+            beforeId
+          )
+        }
+      }
+      // 2. Standard WMS
+      else if (layer.render.type === 'wms') {
+        const rawUrl = layer.render.url || layer.url
+        if (!rawUrl) continue
+
+        const wmsLayers = layer.render.layers
+          ? Array.isArray(layer.render.layers)
+            ? layer.render.layers.join(',')
+            : layer.render.layers
+          : ''
+        const delim = rawUrl.includes('?') ? '&' : '?'
+        const tileUrl = `${rawUrl}${delim}service=WMS&request=GetMap&layers=${encodeURIComponent(wmsLayers)}&styles=&format=image/png&transparent=true&version=1.3.0&width=256&height=256&crs=EPSG:3857&bbox={bbox-epsg-3857}`
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: 'raster',
+            tiles: [tileUrl],
+            tileSize: 256,
+            minzoom: layer.render.minzoom ?? 0,
+            maxzoom: layer.render.maxzoom ?? 22
+          })
+        }
+
+        if (!map.getLayer(layer.id)) {
+          map.addLayer(
+            {
+              id: layer.id,
+              type: 'raster',
+              source: sourceId,
+              paint: {
+                'raster-opacity': layer.opacity ?? 0.8
+              },
+              layout: {
+                visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+              }
+            },
+            beforeId
+          )
+        }
+      }
+      // 3. WMTS or Raster Tile
+      else if (layer.render.type === 'wmts' || layer.render.type === 'raster_tile') {
+        const rawUrl = layer.render.url || layer.url
+        if (!rawUrl) continue
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: 'raster',
+            tiles: [rawUrl],
+            tileSize: 256,
+            minzoom: layer.render.minzoom ?? 0,
+            maxzoom: layer.render.maxzoom ?? 22
+          })
+        }
+
+        if (!map.getLayer(layer.id)) {
+          map.addLayer(
+            {
+              id: layer.id,
+              type: 'raster',
+              source: sourceId,
+              paint: {
+                'raster-opacity': layer.opacity ?? 0.8
+              },
+              layout: {
+                visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+              }
+            },
+            beforeId
+          )
+        }
+      }
+      // 4. Vector Tile
+      else if (layer.render.type === 'vector_tile') {
+        const rawUrl = layer.render.url || layer.url
+        if (!rawUrl) continue
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: 'vector',
+            tiles: [rawUrl]
+          })
+        }
+
+        if (!map.getLayer(layer.id)) {
+          if (layer.geometryType === 'polygon') {
+            map.addLayer(
+              {
+                id: layer.id,
+                type: 'fill',
+                source: sourceId,
+                'source-layer': layer.render.source_layer || layer.id,
+                paint: {
+                  'fill-color': layer.color || '#0284c7',
+                  'fill-opacity': (layer.opacity ?? 0.8) * 0.4
+                },
+                layout: {
+                  visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+                }
+              },
+              beforeId
+            )
+          } else {
+            map.addLayer(
+              {
+                id: layer.id,
+                type: 'line',
+                source: sourceId,
+                'source-layer': layer.render.source_layer || layer.id,
+                paint: {
+                  'line-color': layer.color || '#0284c7',
+                  'line-width': 2,
+                  'line-opacity': layer.opacity ?? 0.8
+                },
+                layout: {
+                  visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+                }
+              },
+              beforeId
+            )
+          }
+        }
+      }
+    }
+  }
+
   function syncAllActiveData() {
     if (!map || !map.getStyle()) return
 
-    // 1. Re-sync selected parcel
-    const selected = mapStore.selectedParcel
+    // 1. Re-sync selection highlight for currently identified/selected feature
+    const feat = mapStore.currentHighlightedFeature
     const selectedSrc = map.getSource('selected-parcel-source') as maplibregl.GeoJSONSource
     if (selectedSrc) {
       selectedSrc.setData({
         type: 'FeatureCollection',
-        features: selected
+        features: feat?.geometry
           ? [
               {
                 type: 'Feature',
-                properties: { id: selected.id },
-                geometry: selected.geometry
+                properties: { id: feat.id, ...(feat.properties || {}) },
+                geometry: feat.geometry
               }
             ]
           : []
       })
+      ensureSelectionLayersOnTop()
     }
 
     // 2. Re-sync buffer
@@ -613,11 +820,109 @@
   function reapplyAllLayers() {
     if (!map || !map.getStyle()) return
     setupOperationalLayers()
+    setupServiceLayers()
     setupMeasurementLayers()
     setupBufferLayer()
     setupQueryResultsLayers()
+    setupSelectionHighlightLayers()
+    ensureSelectionLayersOnTop()
     syncAllActiveData()
     mapStore.syncAllOperationalLayers()
+  }
+
+  function setupSelectionHighlightLayers() {
+    if (!map || !map.getStyle()) return
+
+    if (!map.getSource('selected-parcel-source')) {
+      map.addSource('selected-parcel-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
+      })
+    }
+
+    if (!map.getLayer('selected-parcel-fill')) {
+      map.addLayer({
+        id: 'selected-parcel-fill',
+        type: 'fill',
+        source: 'selected-parcel-source',
+        filter: ['in', '$type', 'Polygon'],
+        paint: {
+          'fill-color': '#0284c7',
+          'fill-opacity': 0.22
+        }
+      })
+    }
+
+    // Outer casing halo for sharp visibility on any background
+    if (!map.getLayer('selected-parcel-casing')) {
+      map.addLayer({
+        id: 'selected-parcel-casing',
+        type: 'line',
+        source: 'selected-parcel-source',
+        filter: ['in', '$type', 'Polygon', 'LineString'],
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 5.5,
+          'line-opacity': 0.9
+        },
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      })
+    }
+
+    // High-contrast primary outline
+    if (!map.getLayer('selected-parcel-outline')) {
+      map.addLayer({
+        id: 'selected-parcel-outline',
+        type: 'line',
+        source: 'selected-parcel-source',
+        filter: ['in', '$type', 'Polygon', 'LineString'],
+        paint: {
+          'line-color': '#0284c7',
+          'line-width': 3.5
+        },
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      })
+    }
+
+    // Point highlight for point geometries
+    if (!map.getLayer('selected-parcel-point')) {
+      map.addLayer({
+        id: 'selected-parcel-point',
+        type: 'circle',
+        source: 'selected-parcel-source',
+        filter: ['==', '$type', 'Point'],
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#0284c7',
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#ffffff'
+        }
+      })
+    }
+  }
+
+  function ensureSelectionLayersOnTop() {
+    if (!map || !map.getStyle()) return
+    const ids = [
+      'selected-parcel-fill',
+      'selected-parcel-casing',
+      'selected-parcel-outline',
+      'selected-parcel-point'
+    ]
+    for (const id of ids) {
+      if (map.getLayer(id)) {
+        map.moveLayer(id)
+      }
+    }
   }
 
   function setupBufferLayer() {
@@ -798,24 +1103,36 @@
     }
   }
 
-  // Update selection highlight when selectedParcel changes
+  // Synchronize dynamic service layers when layers change
   $effect(() => {
-    const selected = mapStore.selectedParcel
+    const layers = mapStore.layers
+    if (!map || !map.getStyle()) return
+    setupServiceLayers()
+    for (const l of layers) {
+      mapStore.updateMapLayerVisibility(l)
+      mapStore.updateMapLayerOpacity(l)
+    }
+  })
+
+  // Update selection highlight when currentHighlightedFeature changes
+  $effect(() => {
+    const feat = mapStore.currentHighlightedFeature
     if (!map || !map.getStyle()) return
     const src = map.getSource('selected-parcel-source') as maplibregl.GeoJSONSource
     if (!src) return
 
-    if (selected) {
+    if (feat && feat.geometry) {
       src.setData({
         type: 'FeatureCollection',
         features: [
           {
             type: 'Feature',
-            properties: { id: selected.id },
-            geometry: selected.geometry
+            properties: { id: feat.id, ...(feat.properties || {}) },
+            geometry: feat.geometry
           }
         ]
       })
+      ensureSelectionLayersOnTop()
     } else {
       src.setData({
         type: 'FeatureCollection',
@@ -881,7 +1198,7 @@
               left: 20,
               right: 20
             }
-          : { top: 60, bottom: 60, left: padLeft + 40, right: 60 }
+          : { top: 60, bottom: 60, left: untrack(() => padLeft) + 40, right: 60 }
 
         map.fitBounds(
           [
@@ -1106,7 +1423,7 @@
 
     if (mapContainer && map) {
       map.getCanvas().style.cursor =
-        m.type && !m.isFinished ? 'crosshair' : mapStore.activeMarkupTool ? 'crosshair' : ''
+        m.type && !m.isFinished ? 'crosshair' : (mapStore.activeMarkupTool || mapStore.activeQueryTool) ? 'crosshair' : ''
     }
   })
 
@@ -1119,6 +1436,24 @@
   style="--pad-left: {padLeft}px;"
 >
   <div bind:this={mapContainer} class="map-container"></div>
+
+  <!-- Print Framing Box Overlay (Active when user has framing active in Print module OR hovering on map print button) -->
+  {#if mapStore.isPrintPreviewActive}
+    <div
+      class="print-frame-overlay"
+      style="--aspect-ratio: {mapStore.printAspectRatio};"
+    >
+      <div class="print-frame-box">
+        <div class="print-frame-crosshair"></div>
+        <div class="print-frame-tag">
+          {mapStore.printSettings.paperSize.toUpperCase()} {mapStore.printSettings.orientation}
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Interactive Identify Popup Pane -->
+  <IdentifyPopup />
 
   <!-- Floating Map Navigation Tools -->
   <div
@@ -1151,16 +1486,28 @@
       </svg>
     </button>
     <button
+      type="button"
       class="map-btn"
-      class:active={mapStore.basemapMenuOpen}
-      onclick={() => (mapStore.basemapMenuOpen = !mapStore.basemapMenuOpen)}
-      aria-label="Change base map"
-      title="Change base map"
+      class:loading={mapStore.isQuickPrinting}
+      disabled={mapStore.isQuickPrinting}
+      onclick={() => mapStore.executeQuickPrint()}
+      onmouseenter={() => (mapStore.printHoverActive = true)}
+      onmouseleave={() => (mapStore.printHoverActive = false)}
+      aria-label={`Print map (${mapStore.printSettings.paperSize.toUpperCase()} ${mapStore.printSettings.orientation})`}
+      title={`Print map (${mapStore.printSettings.paperSize.toUpperCase()} ${mapStore.printSettings.orientation} • ${mapStore.printSettings.format.toUpperCase()})`}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-        <polyline points="2 17 12 22 22 17"></polyline>
-      </svg>
+      {#if mapStore.isQuickPrinting}
+        <svg class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+      {:else}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 6 2 18 2 18 9"></polyline>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <rect x="6" y="14" width="12" height="8"></rect>
+        </svg>
+      {/if}
     </button>
     <button
       class="map-btn"
@@ -1552,6 +1899,87 @@
   @media (max-width: 768px) {
     .map-coord-pill {
       display: none !important;
+    }
+  }
+
+  /* Print Framing Box Overlay */
+  .print-frame-overlay {
+    position: absolute;
+    left: var(--pad-left, 0px);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  .print-frame-box {
+    position: relative;
+    width: min(85%, calc(85vh * var(--aspect-ratio, 1.414)));
+    aspect-ratio: var(--aspect-ratio, 1.414);
+    max-height: 85%;
+    border: 2px dashed rgba(2, 132, 199, 0.8);
+    box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.22);
+    border-radius: 2px;
+  }
+
+  .print-frame-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+  }
+
+  .print-frame-crosshair::before,
+  .print-frame-crosshair::after {
+    content: '';
+    position: absolute;
+    background-color: rgba(2, 132, 199, 0.65);
+  }
+
+  .print-frame-crosshair::before {
+    top: 0;
+    bottom: 0;
+    left: 7.5px;
+    width: 1px;
+  }
+
+  .print-frame-crosshair::after {
+    left: 0;
+    right: 0;
+    top: 7.5px;
+    height: 1px;
+  }
+
+  .print-frame-tag {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    background-color: rgba(2, 132, 199, 0.9);
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .spin-icon {
+    animation: spin 0.9s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
     }
   }
 </style>

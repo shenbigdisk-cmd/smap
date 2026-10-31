@@ -8,20 +8,30 @@
     name: string
     shortTitle: string
     category?: string
+    icon?: string
   }
 
   const TOOLBOX_TAB: TabItem = {
     id: 'toolbox',
     name: 'Advanced GIS Toolbox',
     shortTitle: 'Toolbox',
-    category: 'Tools'
+    category: 'Tools',
+    icon: 'toolbox'
   }
 
-  let pinnedModules = $derived(mapStore.modules.filter((m) => m.isPinned))
+  let sidepanelTabs = $derived<TabItem[]>(
+    mapStore.sidepanelViews.map((v) => ({
+      id: v.id,
+      name: v.name,
+      shortTitle: v.shortTitle,
+      category: v.category,
+      icon: v.icon || v.id
+    }))
+  )
 
-  // Count toolbox as a normal tab in the tabs sequence
+  // Count toolbox as a normal tab in the tabs sequence (deduplicated)
   let allTabs = $derived<TabItem[]>([
-    ...pinnedModules,
+    ...sidepanelTabs.filter((t) => t.id !== 'toolbox'),
     TOOLBOX_TAB
   ])
 
@@ -78,7 +88,7 @@
           <ModuleIcon id={mod.id} size={14} />
         </span>
         <span class="tab-label">{mod.shortTitle}</span>
-        {#if mod.id === 'results' && mapStore.selectedParcel}
+        {#if mod.id === 'results' && mapStore.hasFeatureResults}
           <span class="active-dot"></span>
         {/if}
       </button>

@@ -50,6 +50,25 @@ Settings will ALWAYS open from the User Avatar context menu. Standalone settings
    - ❌ NEVER create a standalone gear button or "Settings" button in toolbars, rails, tab strips, or headers.
    - ❌ NEVER trigger `mapStore.settingsModalOpen = true` directly from secondary panels or empty states; always route through the avatar context menu.
 
+### UI Simplicity & Anti-Clutter Standard (Strict Anti-Bloat)
+AI assistants frequently generate tedious, cluttered interfaces loaded with redundant text, nested subtitles, and duplicated actions. This pattern is strictly prohibited. Keep the interface lean, fast, and high-density.
+
+#### Essential Simplicity Rules:
+1. **Zero Explanatory Subtitle Bloat**:
+   - ❌ NEVER stack `Title + Subtitle + Explanatory Help Text / Hint` on cards, headers, or setting sections.
+   - ❌ NEVER write subtitles stating the obvious (e.g., "Toggle layers to turn on or off", "Filter features using SQL criteria", "Changes take effect immediately", "Flat list of spatial services").
+   - A single, crisp title or label is all that is needed. Let standard controls (checkboxes, sliders, inputs) speak for themselves without narrative text.
+
+2. **Single Canonical Action (No Duplicate Pathways)**:
+   - ❌ NEVER provide multiple buttons, links, or pathways for the same function in the same view.
+   - If an entire card/row is clickable to view details, do NOT add duplicate "Inspect →" or "View Details →" buttons inside that same card.
+   - One obvious, clean interaction per capability.
+
+3. **High Signal-to-Noise Ratio**:
+   - Minimize visual noise: eliminate superfluous decorative badges, redundant chips, repetitive icons, and unnecessary container boxes.
+   - Every element on screen must earn its place by delivering functional utility or essential spatial information.
+   - Prioritize primary content (the map canvas, actual property/cadastral data, direct controls) over UI chrome and explanatory copy.
+
 ## 2. Core Preferences & Philosophy
 - **Frontend Stack**: TypeScript, Svelte (with Vite).
 - **Philosophy**: Local-first, user-owned state, clean architecture, privacy-first.

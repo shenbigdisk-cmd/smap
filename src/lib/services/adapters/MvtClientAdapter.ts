@@ -48,6 +48,7 @@ export class MvtClientAdapter implements IDataAdapter {
       return {
         id: feat.id || props[pk] || `mvt-${idx}`,
         layerId: layer.id,
+        layerTitle: layer.title,
         title: String(titleVal),
         subtitle: String(subtitle),
         geometry: feat.geometry,

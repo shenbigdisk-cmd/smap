@@ -4,7 +4,7 @@
   import ModuleIcon from '../modules/ModuleIcon.svelte'
 
   let inputEl: HTMLInputElement | null = null
-  let pinnedModules = $derived(mapStore.modules.filter((m) => m.isPinned))
+  let sidepanelViews = $derived(mapStore.sidepanelViews)
 
   function onSearch(e: Event) {
     const val = (e.target as HTMLInputElement).value
@@ -102,17 +102,17 @@
 
     <!-- Action Buttons Group: Pinned modules in custom user order, then Toolbox & Basemap -->
     <div class="floating-buttons-group">
-      {#each pinnedModules as mod (mod.id)}
+      {#each sidepanelViews as view (view.id)}
         <button
           class="chip-btn"
-          class:active={mapStore.activeTab === mod.id && mapStore.sidebarOpen}
-          onclick={() => togglePanel(mod.id)}
-          title={mod.name}
+          class:active={mapStore.activeTab === view.id && mapStore.sidebarOpen}
+          onclick={() => togglePanel(view.id)}
+          title={view.name}
         >
-          <ModuleIcon id={mod.id} size={15} />
-          <span>{mod.shortTitle}</span>
-          {#if mod.id === 'results' && mapStore.selectedParcel}
-            <span class="active-dot" title="Active parcel selected"></span>
+          <ModuleIcon id={view.icon || view.id} size={15} />
+          <span>{view.shortTitle}</span>
+          {#if (view.id === 'results' || view.moduleId === 'results') && mapStore.hasFeatureResults}
+            <span class="active-dot" title="Active features available"></span>
           {/if}
         </button>
       {/each}

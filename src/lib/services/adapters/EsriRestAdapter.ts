@@ -14,7 +14,11 @@ export class EsriRestAdapter implements IDataAdapter {
     _point: { x: number; y: number },
     _map: MapLibreMap | null
   ): Promise<QueryResultFeature[]> {
-    const rawUrl = layer.data?.url || layer.url
+    const rawUrl =
+      layer.feature_service?.collection_url ||
+      layer.feature_service?.url ||
+      layer.data?.url ||
+      layer.url
     if (!rawUrl) return []
 
     const queryUrl = new URL(rawUrl.endsWith('/query') ? rawUrl : `${rawUrl}/query`)
@@ -24,7 +28,11 @@ export class EsriRestAdapter implements IDataAdapter {
     queryUrl.searchParams.set('outSR', '4326')
     queryUrl.searchParams.set('spatialRel', 'esriSpatialRelIntersects')
     queryUrl.searchParams.set('returnGeometry', 'true')
-    queryUrl.searchParams.set('outFields', layer.data?.outFields?.join(',') || '*')
+    const outFields =
+      layer.feature_service?.queryable_fields?.join(',') ||
+      layer.data?.outFields?.join(',') ||
+      '*'
+    queryUrl.searchParams.set('outFields', outFields)
     queryUrl.searchParams.set('f', 'geojson')
     queryUrl.searchParams.set('resultRecordCount', '10')
 
@@ -44,7 +52,11 @@ export class EsriRestAdapter implements IDataAdapter {
     query: QueryDefinition,
     _map: MapLibreMap | null
   ): Promise<QueryResultCollection> {
-    const rawUrl = layer.data?.url || layer.url
+    const rawUrl =
+      layer.feature_service?.collection_url ||
+      layer.feature_service?.url ||
+      layer.data?.url ||
+      layer.url
     if (!rawUrl) {
       throw new Error(`Layer ${layer.title} has no query endpoint URL configured.`)
     }
@@ -87,7 +99,10 @@ export class EsriRestAdapter implements IDataAdapter {
     queryUrl.searchParams.set('returnGeometry', 'true')
     queryUrl.searchParams.set('resultRecordCount', String(query.limit || 50))
 
-    const outFields = layer.data?.outFields?.join(',') || '*'
+    const outFields =
+      layer.feature_service?.queryable_fields?.join(',') ||
+      layer.data?.outFields?.join(',') ||
+      '*'
     queryUrl.searchParams.set('outFields', outFields)
 
     // 2. Spatial Criteria
@@ -132,18 +147,27 @@ export class EsriRestAdapter implements IDataAdapter {
   }
 
   private mapFeatures(layer: OperationalLayer, rawFeatures: any[]): QueryResultFeature[] {
-    const displayField = layer.data?.displayField || 'name'
-    const pk = layer.data?.primaryKey || 'OBJECTID'
+    const displayField =
+      layer.feature_service?.display_field || layer.data?.displayField || 'name'
+    const pk = layer.feature_service?.id_field || layer.data?.primaryKey || 'OBJECTID'
 
     return rawFeatures.map((feat: any, idx: number) => {
       const props = feat.properties || {}
       const titleVal = props[displayField] || props.NAME || props[pk] || `Feature #${idx + 1}`
       const subtitle =
-        props.zone_description || props.description || props.lga || props.CATEGORY || ''
+        props.zone_description ||
+        props.description ||
+        props.lga ||
+        props.CATEGORY ||
+        props.LGA_NAME ||
+        props.LOCALITY_NAME ||
+        props.POSTCODE ||
+        ''
 
       return {
         id: feat.id || props[pk] || `feat-${idx}`,
         layerId: layer.id,
+        layerTitle: layer.title,
         title: String(titleVal),
         subtitle: String(subtitle),
         geometry: feat.geometry,

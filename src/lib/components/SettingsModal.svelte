@@ -164,7 +164,7 @@
   function handleDrop(index: number, e: DragEvent) {
     e.preventDefault()
     if (draggedIndex !== null && draggedIndex !== index) {
-      mapStore.moveModule(draggedIndex, index)
+      mapStore.moveView(draggedIndex, index)
     }
     draggedIndex = null
     dragOverIndex = null
@@ -359,21 +359,25 @@
             <section class="section-pane">
               <div class="pane-header-block with-action">
                 <div>
-                  <h3 class="pane-title">Module Order & Tab Placement</h3>
-                  <p class="pane-subtitle">Reorder modules to change their display order across top tabs, the GIS rail, and the Toolbox</p>
+                  <h3 class="pane-title">Views & Container Placement</h3>
+                  <p class="pane-subtitle">Configure whether each view appears as a primary sidebar tab or inside the expandable Toolbox</p>
                 </div>
                 <button
                   type="button"
                   class="reset-order-btn"
-                  onclick={() => mapStore.resetModulesOrder()}
-                  title="Reset default module order"
+                  onclick={() => {
+                    mapStore.resetViewPlacements()
+                    mapStore.resetModulesOrder()
+                  }}
+                  title="Reset default view placements and order"
                 >
-                  Reset Order
+                  Reset Defaults
                 </button>
               </div>
 
               <div class="module-config-list" role="list">
-                {#each mapStore.modules as mod, index (mod.id)}
+                {#each mapStore.views.filter((v) => v.id !== 'toolbox') as view, index (view.id)}
+                  {@const parentMod = mapStore.modules.find((m) => m.id === view.moduleId)}
                   <div
                     class="module-config-row"
                     class:is-dragging={draggedIndex === index}
@@ -398,33 +402,36 @@
                       </svg>
                     </div>
 
-                    <!-- Module Details -->
+                    <!-- View Details -->
                     <div class="mod-meta">
                       <div class="mod-name-row">
                         <span class="mod-icon-badge">
-                          <ModuleIcon id={mod.id} size={14} />
+                          <ModuleIcon id={view.icon || view.id} size={14} />
                         </span>
-                        <span class="mod-name">{mod.name}</span>
-                        <span class="mod-tag" data-category={mod.category}>{mod.category}</span>
+                        <span class="mod-name">{view.name}</span>
+                        {#if parentMod && parentMod.id !== view.id}
+                          <span class="mod-parent-tag">{parentMod.shortTitle}</span>
+                        {/if}
+                        <span class="mod-tag" data-category={view.category}>{view.category}</span>
                       </div>
-                      <span class="mod-desc">{mod.description}</span>
+                      <span class="mod-desc">{view.description}</span>
                     </div>
 
-                    <!-- Tab / Toolbox Placement Toggle -->
+                    <!-- Sidepanel / Toolbox Placement Toggle -->
                     <div class="placement-segmented">
                       <button
                         type="button"
                         class="segment-btn"
-                        class:selected={mod.isPinned}
-                        onclick={() => mapStore.setModulePlacement(mod.id, 'tab')}
+                        class:selected={view.placement === 'sidepanel'}
+                        onclick={() => mapStore.setViewPlacement(view.id, 'sidepanel')}
                       >
-                        Top Tab
+                        Sidepanel Tab
                       </button>
                       <button
                         type="button"
                         class="segment-btn"
-                        class:selected={!mod.isPinned}
-                        onclick={() => mapStore.setModulePlacement(mod.id, 'toolbox')}
+                        class:selected={view.placement === 'toolbox'}
+                        onclick={() => mapStore.setViewPlacement(view.id, 'toolbox')}
                       >
                         Toolbox
                       </button>
@@ -507,6 +514,29 @@
               <div class="pane-header-block">
                 <h3 class="pane-title">Map & 3D Features</h3>
                 <p class="pane-subtitle">Configure 3D volumetric building mass extrusions and performance options</p>
+              </div>
+
+              <div class="card-setting-box">
+                <div class="form-row">
+                  <div class="row-label-group">
+                    <label for="setting-identify-mode" class="row-label">Map Click Identify Destination</label>
+                    <span class="row-sublabel">Choose whether clicking features on the map displays a popup pane or opens the side panel</span>
+                  </div>
+                  <select
+                    id="setting-identify-mode"
+                    class="styled-select"
+                    value={s.identifyDisplayMode || 'auto'}
+                    onchange={(e) =>
+                      mapStore.updateSettings({
+                        identifyDisplayMode: (e.target as HTMLSelectElement).value as any
+                      })
+                    }
+                  >
+                    <option value="auto">Automatic (Popup in App & Compact, Sidepanel in Site)</option>
+                    <option value="popup">Map Popup Pane</option>
+                    <option value="panel">Side Panel (Features Panel)</option>
+                  </select>
+                </div>
               </div>
 
               <div class="card-setting-box">
@@ -979,6 +1009,16 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--text-main);
+  }
+
+  .mod-parent-tag {
+    font-size: 8.5px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--accent-primary);
   }
 
   .mod-tag {

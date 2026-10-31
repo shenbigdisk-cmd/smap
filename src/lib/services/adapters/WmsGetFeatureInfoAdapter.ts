@@ -49,6 +49,7 @@ export class WmsGetFeatureInfoAdapter implements IDataAdapter {
         return {
           id: feat.id || `wms-${idx}`,
           layerId: layer.id,
+          layerTitle: layer.title,
           title: String(props[displayField] || props.NAME || `WMS Feature #${idx + 1}`),
           subtitle: String(props.DESCRIPTION || props.category || ''),
           geometry: feat.geometry,

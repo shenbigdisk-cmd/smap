@@ -3,7 +3,7 @@
   import UserAvatarMenu from './UserAvatarMenu.svelte'
   import ModuleIcon from '../modules/ModuleIcon.svelte'
 
-  let pinnedModules = $derived(mapStore.modules.filter((m) => m.isPinned))
+  let sidepanelViews = $derived(mapStore.sidepanelViews)
 
   function handleRailClick(id: string) {
     mapStore.toggleTab(id as any)
@@ -18,23 +18,23 @@
     </div>
   </div>
 
-  <!-- Pinned Module Action Buttons -->
+  <!-- Pinned Module / View Action Buttons -->
   <nav class="rail-nav">
-    {#each pinnedModules as mod (mod.id)}
+    {#each sidepanelViews as view (view.id)}
       <button
         class="rail-btn"
-        class:active={mapStore.activeTab === mod.id && mapStore.sidebarOpen}
-        onclick={() => handleRailClick(mod.id)}
-        title={mod.name}
-        aria-label={mod.name}
+        class:active={mapStore.activeTab === view.id && mapStore.sidebarOpen}
+        onclick={() => handleRailClick(view.id)}
+        title={view.name}
+        aria-label={view.name}
       >
         <span class="rail-icon-wrap">
-          <ModuleIcon id={mod.id} size={20} />
-          {#if mod.id === 'results' && mapStore.selectedParcel}
+          <ModuleIcon id={view.icon || view.id} size={20} />
+          {#if (view.id === 'results' || view.moduleId === 'results') && mapStore.hasFeatureResults}
             <span class="rail-active-dot"></span>
           {/if}
         </span>
-        <span class="rail-label">{mod.shortTitle}</span>
+        <span class="rail-label">{view.shortTitle}</span>
       </button>
     {/each}
 

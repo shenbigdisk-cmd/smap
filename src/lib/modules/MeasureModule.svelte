@@ -28,11 +28,6 @@
 </script>
 
 <div class="measure-panel">
-  <div class="measure-header">
-    <span class="title">SPATIAL MEASUREMENT TOOLS</span>
-    <span class="subtitle">Click on map to measure · Double-click to finish</span>
-  </div>
-
   <!-- Mode Switcher -->
   <div class="tool-selector">
     <button
@@ -206,25 +201,7 @@
   .measure-panel {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-  }
-
-  .measure-header {
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 8px;
-  }
-
-  .title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
-    display: block;
-  }
-
-  .subtitle {
-    font-size: 11px;
-    color: var(--text-light);
+    gap: 14px;
   }
 
   .tool-selector {

@@ -14,11 +14,6 @@
 </script>
 
 <div class="markup-panel">
-  <div class="panel-header">
-    <span class="title">SPATIAL MARKUP & SKETCH</span>
-    <span class="subtitle">Draw annotations, boundaries, and shapes on map</span>
-  </div>
-
   <!-- Drawing Tools Grid -->
   <div class="tools-grid">
     <button
@@ -271,24 +266,6 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-  }
-
-  .panel-header {
-    border-bottom: 1px solid var(--border-color, #e2e8f0);
-    padding-bottom: 8px;
-  }
-
-  .title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted, #64748b);
-    letter-spacing: 0.05em;
-    display: block;
-  }
-
-  .subtitle {
-    font-size: 11px;
-    color: var(--text-light, #94a3b8);
   }
 
   .tools-grid {
