@@ -1,6 +1,19 @@
 import rawConfig from '../../config/app.config.json'
 import type { BasemapConfig, OperationalLayer, SearchSourceConfig, WebGISModule } from '../types'
 
+export interface CoordinateConfig {
+  system: string
+  datum: string
+  projection: string
+  defaultZone: number
+  transformation: string
+  labels: {
+    projected: string
+    geographic: string
+    datum: string
+  }
+}
+
 export interface AppConfig {
   title: string
   subtitle: string
@@ -14,6 +27,7 @@ export interface AppConfig {
   extentVictoria: {
     bbox: [[number, number], [number, number]]
   }
+  coordinates?: CoordinateConfig
   basemaps: BasemapConfig[]
   defaultBasemapId: string
   operationalLayers: OperationalLayer[]
@@ -29,6 +43,7 @@ export const MAP_CONFIG: AppConfig = {
   agency: rawConfig.app.agency,
   initialView: rawConfig.initialView as AppConfig['initialView'],
   extentVictoria: rawConfig.extentVictoria as AppConfig['extentVictoria'],
+  coordinates: rawConfig.coordinates as CoordinateConfig,
   basemaps: rawConfig.basemaps as BasemapConfig[],
   defaultBasemapId: rawConfig.defaultBasemapId,
   operationalLayers: rawConfig.layers as unknown as OperationalLayer[],

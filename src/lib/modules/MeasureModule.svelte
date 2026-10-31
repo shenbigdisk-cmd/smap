@@ -1,9 +1,11 @@
 <script lang="ts">
   import { mapStore } from '../stores/mapStore.svelte'
+  import type { MeasurementType } from '../types'
   import { formatArea, formatCoordinates, formatDistance } from '../utils/geodesy'
 
   let activeType = $derived(mapStore.measurement.type)
   let ptCount = $derived(mapStore.measurement.points.length)
+  let isFinished = $derived(Boolean(mapStore.measurement.isFinished))
   let distStr = $derived(formatDistance(mapStore.measurement.totalDistanceMeters))
   let areaStr = $derived(formatArea(mapStore.measurement.totalAreaM2))
 
@@ -15,20 +17,30 @@
         )
       : null
   )
+
+  function selectTool(type: MeasurementType) {
+    if (mapStore.measurement.type === type) {
+      mapStore.setMeasurementMode(null)
+    } else {
+      mapStore.setMeasurementMode(type)
+    }
+  }
 </script>
 
 <div class="measure-panel">
   <div class="measure-header">
     <span class="title">SPATIAL MEASUREMENT TOOLS</span>
-    <span class="subtitle">Click on the map to place vertices</span>
+    <span class="subtitle">Click on map to measure · Double-click to finish</span>
   </div>
 
   <!-- Mode Switcher -->
   <div class="tool-selector">
     <button
+      type="button"
       class="tool-btn"
       class:active={activeType === 'distance'}
-      onclick={() => mapStore.setMeasurementMode('distance')}
+      onclick={() => selectTool('distance')}
+      title="Distance Measurement Tool"
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0l12.6 12.6z"></path>
@@ -41,9 +53,11 @@
     </button>
 
     <button
+      type="button"
       class="tool-btn"
       class:active={activeType === 'area'}
-      onclick={() => mapStore.setMeasurementMode('area')}
+      onclick={() => selectTool('area')}
+      title="Area Measurement Tool"
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
@@ -54,9 +68,11 @@
     </button>
 
     <button
+      type="button"
       class="tool-btn"
       class:active={activeType === 'coordinate'}
-      onclick={() => mapStore.setMeasurementMode('coordinate')}
+      onclick={() => selectTool('coordinate')}
+      title="GDA2020 Coordinate Inspector"
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
@@ -73,7 +89,14 @@
   <div class="readings-card">
     {#if activeType === 'distance'}
       <div class="reading-row">
-        <span class="label">Total Polyline Distance</span>
+        <div class="row-header">
+          <span class="label">Total Polyline Distance</span>
+          {#if isFinished}
+            <span class="status-badge finished">Finished</span>
+          {:else if ptCount > 0}
+            <span class="status-badge measuring">Drawing...</span>
+          {/if}
+        </div>
         <span class="value big">{distStr}</span>
       </div>
       <div class="sub-row">
@@ -81,7 +104,14 @@
       </div>
     {:else if activeType === 'area'}
       <div class="reading-row">
-        <span class="label">Total Enclosed Area</span>
+        <div class="row-header">
+          <span class="label">Total Enclosed Area</span>
+          {#if isFinished}
+            <span class="status-badge finished">Finished</span>
+          {:else if ptCount > 0}
+            <span class="status-badge measuring">Drawing...</span>
+          {/if}
+        </div>
         <span class="value big">{areaStr}</span>
       </div>
       <div class="sub-row">
@@ -90,19 +120,19 @@
     {:else if activeType === 'coordinate'}
       {#if coordDetails}
         <div class="reading-row">
-          <span class="label">WGS84 / GDA2020 Decimal</span>
-          <span class="value mono">{coordDetails.latLng}</span>
+          <span class="label">MGA2020 Zone 55 (Projected)</span>
+          <span class="value mono">{coordDetails.mga2020}</span>
         </div>
         <div class="reading-row">
-          <span class="label">Map Grid of Australia (Zone 55)</span>
-          <span class="value mono">{coordDetails.mga55}</span>
+          <span class="label">GDA2020 Geographic</span>
+          <span class="value mono">{coordDetails.gda2020LatLng}</span>
         </div>
         <div class="reading-row">
-          <span class="label">Degrees Minutes Seconds</span>
-          <span class="value mono">{coordDetails.dms}</span>
+          <span class="label">Coordinate Datum</span>
+          <span class="value mono sub">{coordDetails.datum}</span>
         </div>
       {:else}
-        <p class="empty-instruction">Click anywhere on the map to sample coordinates.</p>
+        <p class="empty-instruction">Click anywhere on the map to sample GDA2020 coordinates.</p>
       {/if}
     {:else}
       <p class="empty-instruction">Select a measurement tool above to begin measuring on the map canvas.</p>
@@ -121,11 +151,19 @@
       </div>
       <div class="text">
         {#if activeType === 'distance'}
-          Click map to add points along a path. Values calculate dynamically.
+          {#if isFinished}
+            Measurement complete. Click Clear to start a new distance measurement.
+          {:else}
+            Click map to place line vertices. Follow the helper line. Double-click to finish.
+          {/if}
         {:else if activeType === 'area'}
-          Click map to draw a polygon boundary (requires at least 3 points).
+          {#if isFinished}
+            Polygon complete. Click Clear to start a new area measurement.
+          {:else}
+            Click map to place polygon vertices. Follow the preview shape. Double-click to finish (requires 3+ points).
+          {/if}
         {:else}
-          Click any feature or location to display official coordinates.
+          Click any feature or parcel to sample official GDA2020 coordinates.
         {/if}
       </div>
     </div>
@@ -134,19 +172,31 @@
   <!-- Action Controls -->
   {#if activeType}
     <div class="measure-actions">
+      {#if !isFinished && ((activeType === 'distance' && ptCount >= 2) || (activeType === 'area' && ptCount >= 3))}
+        <button
+          type="button"
+          class="action-btn primary"
+          onclick={() => mapStore.finishMeasurement()}
+        >
+          Finish
+        </button>
+      {/if}
+
       <button
+        type="button"
         class="action-btn secondary"
         disabled={ptCount === 0 && !mapStore.measurement.lastCoordinate}
         onclick={() => mapStore.clearMeasurement()}
       >
-        Clear Measurement
+        Clear
       </button>
 
       <button
+        type="button"
         class="action-btn done"
         onclick={() => mapStore.setMeasurementMode(null)}
       >
-        Done Measuring
+        {isFinished ? 'Done' : 'Cancel'}
       </button>
     </div>
   {/if}
@@ -224,7 +274,34 @@
   .reading-row {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
+  }
+
+  .row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .status-badge.measuring {
+    background-color: rgba(236, 72, 153, 0.15);
+    color: #db2777;
+    border: 1px solid rgba(236, 72, 153, 0.3);
+  }
+
+  .status-badge.finished {
+    background-color: rgba(22, 163, 74, 0.15);
+    color: #16a34a;
+    border: 1px solid rgba(22, 163, 74, 0.3);
   }
 
   .label {
@@ -252,11 +329,16 @@
     font-family: monospace;
     font-size: 11px;
     background-color: var(--bg-card-subtle);
-    padding: 3px 6px;
+    padding: 4px 8px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
     display: inline-block;
     color: var(--text-main);
+  }
+
+  .value.mono.sub {
+    color: var(--text-muted);
+    font-size: 10px;
   }
 
   .sub-row {
@@ -283,6 +365,7 @@
     padding: 8px 10px;
     font-size: 11px;
     color: var(--text-muted);
+    line-height: 1.4;
   }
 
   .instruction-box .icon {
@@ -305,6 +388,16 @@
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.15s;
+  }
+
+  .action-btn.primary {
+    background-color: #db2777;
+    color: #ffffff;
+    border-color: #db2777;
+  }
+
+  .action-btn.primary:hover {
+    background-color: #be185d;
   }
 
   .action-btn.secondary {

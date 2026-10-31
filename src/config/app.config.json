@@ -12,6 +12,18 @@
     "pitch": 0,
     "bearing": 0
   },
+  "coordinates": {
+    "system": "GDA2020",
+    "datum": "GDA2020",
+    "projection": "MGA2020",
+    "defaultZone": 55,
+    "transformation": "null",
+    "labels": {
+      "projected": "MGA2020 Zone 55",
+      "geographic": "GDA2020 Geographic",
+      "datum": "GDA2020 (GRS80 / Null Transformation)"
+    }
+  },
   "extentVictoria": {
     "bbox": [
       [140.9617, -39.1592],

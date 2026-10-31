@@ -25,7 +25,7 @@
     SAMPLE_PARCELS,
     ZONE_POLYGONS_GEOJSON
   } from '../data/sampleData'
-  import { formatCoordinates } from '../utils/geodesy'
+  import { formatArea, formatCoordinates, formatDistance } from '../utils/geodesy'
   import { getInitialMapViewState, initUrlStateSync, updateUrlHash } from '../utils/urlState'
 
   let mapContainer: HTMLDivElement | null = null
@@ -145,6 +145,23 @@
             : []
           map.getCanvas().style.cursor = hovered.length > 0 ? 'pointer' : ''
         }
+
+        // Live rubberband preview line during active measurement
+        if (
+          mapStore.measurement.type &&
+          !mapStore.measurement.isFinished &&
+          mapStore.measurement.points.length > 0
+        ) {
+          updateMeasurementData(coord)
+        }
+      }
+    })
+
+    // Double-click to complete measurement without zooming
+    map.on('dblclick', (e: MapMouseEvent) => {
+      if (mapStore.measurement.type && !mapStore.measurement.isFinished) {
+        e.preventDefault()
+        mapStore.finishMeasurement()
       }
     })
 
@@ -579,38 +596,7 @@
     }
 
     // 3. Re-sync measurement
-    const m = mapStore.measurement
-    const mSrc = map.getSource('measure-source') as maplibregl.GeoJSONSource
-    if (mSrc) {
-      const features: any[] = []
-      if (m.points.length > 0) {
-        m.points.forEach((pt) => {
-          features.push({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: pt },
-            properties: {}
-          })
-        })
-        if (m.type === 'distance' && m.points.length >= 2) {
-          features.push({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: m.points },
-            properties: {}
-          })
-        } else if (m.type === 'area' && m.points.length >= 3) {
-          features.push({
-            type: 'Feature',
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[...m.points, m.points[0]]]
-            },
-            properties: {}
-          })
-        }
-      }
-      mSrc.setData({ type: 'FeatureCollection', features })
-    }
-
+    updateMeasurementData()
   }
 
   function reapplyAllLayers() {
@@ -680,25 +666,46 @@
         filter: ['==', '$type', 'Polygon'],
         paint: {
           'fill-color': '#ec4899',
-          'fill-opacity': 0.25
+          'fill-opacity': [
+            'case',
+            ['==', ['get', 'preview'], true],
+            0.15,
+            0.28
+          ]
         }
       })
     }
 
+    // Solid line for confirmed edges
     if (!map.getLayer('measure-line')) {
       map.addLayer({
         id: 'measure-line',
         type: 'line',
         source: 'measure-source',
-        filter: ['in', '$type', 'LineString', 'Polygon'],
+        filter: ['all', ['in', '$type', 'LineString', 'Polygon'], ['!=', 'preview', true]],
         paint: {
           'line-color': '#db2777',
-          'line-width': 2.5,
-          'line-dasharray': [2, 1]
+          'line-width': 2.5
         }
       })
     }
 
+    // Dashed helper line for cursor rubberband preview
+    if (!map.getLayer('measure-preview-line')) {
+      map.addLayer({
+        id: 'measure-preview-line',
+        type: 'line',
+        source: 'measure-source',
+        filter: ['all', ['in', '$type', 'LineString', 'Polygon'], ['==', 'preview', true]],
+        paint: {
+          'line-color': '#ec4899',
+          'line-width': 2,
+          'line-dasharray': [3, 2]
+        }
+      })
+    }
+
+    // Point vertices
     if (!map.getLayer('measure-points')) {
       map.addLayer({
         id: 'measure-points',
@@ -706,8 +713,18 @@
         source: 'measure-source',
         filter: ['==', '$type', 'Point'],
         paint: {
-          'circle-radius': 5,
-          'circle-color': '#be185d',
+          'circle-radius': [
+            'case',
+            ['==', ['get', 'preview'], true],
+            4,
+            5.5
+          ],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'preview'], true],
+            '#f472b6',
+            '#be185d'
+          ],
           'circle-stroke-width': 2,
           'circle-stroke-color': '#ffffff'
         }
@@ -901,39 +918,152 @@
     }
   })
 
-  // Update measurement layers when measurement state changes
-  $effect(() => {
-    const m = mapStore.measurement
+  function updateMeasurementData(cursor?: [number, number]) {
     if (!map || !map.getStyle()) return
     const src = map.getSource('measure-source') as maplibregl.GeoJSONSource
     if (!src) return
 
+    const m = mapStore.measurement
     const features: any[] = []
 
     if (m.points.length > 0) {
-      m.points.forEach((pt) => {
+      // Confirmed point vertices
+      m.points.forEach((pt, idx) => {
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: pt },
-          properties: {}
+          properties: { index: idx, preview: false }
         })
       })
 
-      if (m.type === 'distance' && m.points.length >= 2) {
-        features.push({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates: m.points },
-          properties: {}
-        })
-      } else if (m.type === 'area' && m.points.length >= 3) {
-        features.push({
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[...m.points, m.points[0]]]
-          },
-          properties: {}
-        })
+      const cur = !m.isFinished && cursor ? cursor : null
+
+      if (m.type === 'distance') {
+        if (m.points.length >= 2) {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: m.points },
+            properties: { preview: false }
+          })
+        }
+        if (cur) {
+          const lastPt = m.points[m.points.length - 1]
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [lastPt, cur] },
+            properties: { preview: true }
+          })
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: cur },
+            properties: { preview: true }
+          })
+        }
+      } else if (m.type === 'area') {
+        if (m.isFinished) {
+          if (m.points.length >= 3) {
+            features.push({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...m.points, m.points[0]]]
+              },
+              properties: { preview: false }
+            })
+            features.push({
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: [...m.points, m.points[0]]
+              },
+              properties: { preview: false }
+            })
+          }
+        } else {
+          // Dynamic drawing mode
+          if (m.points.length === 1 && cur) {
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: [m.points[0], cur] },
+              properties: { preview: true }
+            })
+          } else if (m.points.length === 2) {
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: m.points },
+              properties: { preview: false }
+            })
+            if (cur) {
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'Polygon',
+                  coordinates: [[m.points[0], m.points[1], cur, m.points[0]]]
+                },
+                properties: { preview: true }
+              })
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [m.points[1], cur, m.points[0]]
+                },
+                properties: { preview: true }
+              })
+            }
+          } else if (m.points.length >= 3) {
+            if (cur) {
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'Polygon',
+                  coordinates: [[...m.points, cur, m.points[0]]]
+                },
+                properties: { preview: true }
+              })
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: m.points
+                },
+                properties: { preview: false }
+              })
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [m.points[m.points.length - 1], cur, m.points[0]]
+                },
+                properties: { preview: true }
+              })
+            } else {
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'Polygon',
+                  coordinates: [[...m.points, m.points[0]]]
+                },
+                properties: { preview: false }
+              })
+              features.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [...m.points, m.points[0]]
+                },
+                properties: { preview: false }
+              })
+            }
+          }
+          if (cur) {
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: cur },
+              properties: { preview: true }
+            })
+          }
+        }
       }
     }
 
@@ -941,9 +1071,31 @@
       type: 'FeatureCollection',
       features
     })
+  }
+
+  // Keep double-click zoom disabled during measurement
+  $effect(() => {
+    if (!map) return
+    const isMeasuring = mapStore.measurement.type && !mapStore.measurement.isFinished
+    if (isMeasuring) {
+      map.doubleClickZoom.disable()
+    } else {
+      map.doubleClickZoom.enable()
+    }
+  })
+
+  // Update measurement layers when measurement state changes
+  $effect(() => {
+    const m = mapStore.measurement
+    updateMeasurementData(
+      m.type && !m.isFinished && m.points.length > 0 && mapStore.cursorCoordinates
+        ? mapStore.cursorCoordinates
+        : undefined
+    )
 
     if (mapContainer && map) {
-      map.getCanvas().style.cursor = m.type || mapStore.activeMarkupTool ? 'crosshair' : ''
+      map.getCanvas().style.cursor =
+        m.type && !m.isFinished ? 'crosshair' : mapStore.activeMarkupTool ? 'crosshair' : ''
     }
   })
 
@@ -1014,16 +1166,37 @@
   {#if mapStore.measurement.type}
     <div class="measure-active-banner" class:mobile-layout={mapStore.isMobile}>
       <div class="measure-banner-content">
-        <span class="banner-pulse"></span>
+        <span class="banner-pulse" class:finished={mapStore.measurement.isFinished}></span>
         <span class="banner-text">
-          Measuring {mapStore.measurement.type.toUpperCase()}: Click points on map
+          {#if mapStore.measurement.isFinished}
+            {mapStore.measurement.type.toUpperCase()} MEASURED
+            {#if mapStore.measurement.type === 'distance'}
+              : {formatDistance(mapStore.measurement.totalDistanceMeters)}
+            {:else if mapStore.measurement.type === 'area'}
+              : {formatArea(mapStore.measurement.totalAreaM2)}
+            {/if}
+          {:else}
+            Measuring {mapStore.measurement.type.toUpperCase()}: Click points on map. Double-click to finish.
+          {/if}
         </span>
-        <button
-          class="banner-finish-btn"
-          onclick={() => mapStore.setMeasurementMode(null)}
-        >
-          Finish
-        </button>
+        <div class="banner-btn-group">
+          {#if !mapStore.measurement.isFinished && ((mapStore.measurement.type === 'distance' && mapStore.measurement.points.length >= 2) || (mapStore.measurement.type === 'area' && mapStore.measurement.points.length >= 3))}
+            <button
+              type="button"
+              class="banner-finish-btn"
+              onclick={() => mapStore.finishMeasurement()}
+            >
+              Finish
+            </button>
+          {/if}
+          <button
+            type="button"
+            class="banner-finish-btn cancel"
+            onclick={() => mapStore.setMeasurementMode(null)}
+          >
+            {mapStore.measurement.isFinished ? 'Close' : 'Cancel'}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
@@ -1086,9 +1259,10 @@
   <div
     class="map-coord-pill"
     aria-hidden="true"
+    title="GDA2020 / MGA Zone 55 Coordinate Readout"
   >
     <span class="coord-txt">
-      {mapStore.cursorCoordinates[1].toFixed(4)}° S, {mapStore.cursorCoordinates[0].toFixed(4)}° E
+      {mapStore.formattedCursorCoord}
     </span>
     <span class="coord-divider">·</span>
     <span class="zoom-txt">Z{mapStore.currentZoom}</span>
@@ -1228,6 +1402,10 @@
     height: 8px;
     border-radius: 50%;
     background-color: #ec4899;
+  }
+
+  .banner-pulse.finished {
+    background-color: #22c55e;
   }
 
   .banner-pulse.markup {

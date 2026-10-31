@@ -12,7 +12,7 @@ export type AppTheme =
 
 export type MeasurementUnit = 'metric' | 'imperial'
 
-export type CoordinateFormat = 'dd' | 'mga55' | 'dms'
+export type CoordinateFormat = 'mga2020' | 'gda2020_latlng' | 'dd' | 'mga55' | 'dms'
 
 export interface UserSettings {
   layout: LayoutMode
@@ -222,6 +222,7 @@ export interface MeasurementState {
   totalDistanceMeters: number
   totalAreaM2: number
   lastCoordinate: [number, number] | null
+  isFinished?: boolean
 }
 
 export interface MapBookmark {

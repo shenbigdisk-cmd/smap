@@ -22,7 +22,12 @@ import type {
   WebGISModule
 } from '../types'
 import { createPointBufferPolygon } from '../utils/buffer'
-import { calculatePathLengthMeters, calculatePolygonAreaM2 } from '../utils/geodesy'
+import {
+  calculateDistanceMeters,
+  calculatePathLengthMeters,
+  calculatePolygonAreaM2,
+  formatCoordinates
+} from '../utils/geodesy'
 import { updateUrlHash } from '../utils/urlState'
 import { INITIAL_MODULES } from '../modules/registry'
 
@@ -89,8 +94,14 @@ class MapStore {
     points: [],
     totalDistanceMeters: 0,
     totalAreaM2: 0,
-    lastCoordinate: null
+    lastCoordinate: null,
+    isFinished: false
   })
+
+  get formattedCursorCoord(): string {
+    if (!this.cursorCoordinates) return ''
+    return formatCoordinates(this.cursorCoordinates[0], this.cursorCoordinates[1]).pillText
+  }
 
   // Buffer State (for selected parcel)
   bufferState = $state<BufferState>({
@@ -876,33 +887,48 @@ class MapStore {
 
   // Measurement Engine
   setMeasurementMode(type: MeasurementType | null) {
+    if (this.activeMarkupTool) {
+      this.activeMarkupTool = null
+    }
+
     if (type) {
       this.measurement = {
         type,
         points: [],
         totalDistanceMeters: 0,
         totalAreaM2: 0,
-        lastCoordinate: null
+        lastCoordinate: null,
+        isFinished: false
       }
       this.launchModule('measure')
-      if (this.activeMarkupTool) {
-        this.activeMarkupTool = null
-      }
       this.registerMapHandler({
         id: `measure-${type}`,
         moduleId: 'measure',
         cursor: 'crosshair',
-        hint: `Click map to add ${type} measurement points. Esc to cancel.`,
+        hint:
+          type === 'coordinate'
+            ? 'Click anywhere on map to inspect GDA2020 coordinate.'
+            : `Click map to add ${type} vertices. Double-click or Enter to finish. Esc to cancel.`,
         onClick: (coord) => {
           this.addMeasurementPoint(coord)
         },
+        onKeyDown: (e) => {
+          if (e.key === 'Escape') {
+            this.setMeasurementMode(null)
+          } else if (e.key === 'Enter') {
+            this.finishMeasurement()
+          }
+        },
         onDeactivate: () => {
-          this.measurement = {
-            type: null,
-            points: [],
-            totalDistanceMeters: 0,
-            totalAreaM2: 0,
-            lastCoordinate: null
+          if (this.measurement.type === type && !this.measurement.isFinished) {
+            this.measurement = {
+              type: null,
+              points: [],
+              totalDistanceMeters: 0,
+              totalAreaM2: 0,
+              lastCoordinate: null,
+              isFinished: false
+            }
           }
         }
       })
@@ -912,19 +938,42 @@ class MapStore {
         points: [],
         totalDistanceMeters: 0,
         totalAreaM2: 0,
-        lastCoordinate: null
+        lastCoordinate: null,
+        isFinished: false
       }
       this.deactivateMapHandler('measure')
     }
   }
 
   addMeasurementPoint(coord: [number, number]) {
-    if (!this.measurement.type) return
+    if (!this.measurement.type || this.measurement.isFinished) return
+
+    if (this.measurement.type === 'coordinate') {
+      this.measurement = {
+        type: 'coordinate',
+        points: [coord],
+        totalDistanceMeters: 0,
+        totalAreaM2: 0,
+        lastCoordinate: coord,
+        isFinished: true
+      }
+      return
+    }
+
+    if (this.measurement.points.length > 0) {
+      const last = this.measurement.points[this.measurement.points.length - 1]
+      if (calculateDistanceMeters(last, coord) < 0.5) {
+        return
+      }
+    }
 
     const newPoints: [number, number][] = [...this.measurement.points, coord]
-    const distance = calculatePathLengthMeters(newPoints)
+    const distance =
+      this.measurement.type === 'area' && newPoints.length >= 3
+        ? calculatePathLengthMeters([...newPoints, newPoints[0]])
+        : calculatePathLengthMeters(newPoints)
     const area =
-      this.measurement.type === 'area'
+      this.measurement.type === 'area' && newPoints.length >= 3
         ? calculatePolygonAreaM2(newPoints)
         : 0
 
@@ -933,12 +982,63 @@ class MapStore {
       points: newPoints,
       totalDistanceMeters: distance,
       totalAreaM2: area,
-      lastCoordinate: coord
+      lastCoordinate: coord,
+      isFinished: false
+    }
+  }
+
+  finishMeasurement() {
+    if (!this.measurement.type || this.measurement.isFinished) return
+
+    let points = [...this.measurement.points]
+    if (points.length >= 2) {
+      const last = points[points.length - 1]
+      const prev = points[points.length - 2]
+      if (calculateDistanceMeters(last, prev) < 2) {
+        points.pop()
+      }
+    }
+
+    if (this.measurement.type === 'distance') {
+      if (points.length < 2) return
+      const distance = calculatePathLengthMeters(points)
+      this.measurement = {
+        ...this.measurement,
+        points,
+        totalDistanceMeters: distance,
+        isFinished: true
+      }
+    } else if (this.measurement.type === 'area') {
+      if (points.length < 3) return
+      const distance = calculatePathLengthMeters([...points, points[0]])
+      const area = calculatePolygonAreaM2(points)
+      this.measurement = {
+        ...this.measurement,
+        points,
+        totalDistanceMeters: distance,
+        totalAreaM2: area,
+        isFinished: true
+      }
+    }
+
+    if (this.map) {
+      this.map.getCanvas().style.cursor = 'default'
     }
   }
 
   clearMeasurement() {
-    this.setMeasurementMode(this.measurement.type)
+    const currentType = this.measurement.type
+    this.measurement = {
+      type: currentType,
+      points: [],
+      totalDistanceMeters: 0,
+      totalAreaM2: 0,
+      lastCoordinate: null,
+      isFinished: false
+    }
+    if (currentType) {
+      this.setMeasurementMode(currentType)
+    }
   }
 
   // Markup & Annotations Engine (Terra Draw)
