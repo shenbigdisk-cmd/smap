@@ -22,112 +22,129 @@
   </div>
 
   <div class="layer-list">
-    {#each mapStore.layers as layer (layer.id)}
-      {@const isFolded = !expandedLayers[layer.id]}
-      <div class="layer-item" class:disabled={!layer.visible} class:expanded={!isFolded}>
-        <!-- Compact Main Row: Checkbox + Title + Chevron -->
-        <div class="layer-main-row">
-          <label class="layer-toggle-label">
-            <input
-              type="checkbox"
-              checked={layer.visible}
-              onchange={() => mapStore.toggleLayer(layer.id)}
-            />
-            <span class="layer-title" title={layer.title}>{layer.title}</span>
-            {#if layer.format === 'esri-feature'}
-              <span class="layer-format-pill esri">ESRI</span>
-            {/if}
-          </label>
-
-          <button
-            type="button"
-            class="layer-chevron-btn"
-            class:rotated={!isFolded}
-            onclick={() => toggleLayerFold(layer.id)}
-            title={isFolded ? 'Expand layer controls' : 'Collapse layer controls'}
-            aria-label={isFolded ? `Expand ${layer.title}` : `Collapse ${layer.title}`}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
+    {#each mapStore.services as service (service.id)}
+      <div class="service-group">
+        <div class="service-header">
+          <div class="service-info">
+            <span class="service-badge {service.type}">{service.type.toUpperCase()}</span>
+            <span class="service-name" title={service.description || service.name}>{service.name}</span>
+          </div>
+          <span class="service-count">{service.layers.length} {service.layers.length === 1 ? 'layer' : 'layers'}</span>
         </div>
 
-        <!-- Collapsible Details Zone: Opacity + Description -->
-        {#if !isFolded}
-          <div class="layer-details-zone">
-            {#if layer.visible}
-              <div class="layer-controls-row">
-                <div class="opacity-control">
-                  <span class="control-label">Opacity: {Math.round(layer.opacity * 100)}%</span>
+        <div class="service-layers">
+          {#each service.layers as layer (layer.id)}
+            {@const isFolded = !expandedLayers[layer.id]}
+            <div class="layer-item" class:disabled={!layer.visible} class:expanded={!isFolded}>
+              <!-- Compact Main Row: Checkbox + Title + Chevron -->
+              <div class="layer-main-row">
+                <label class="layer-toggle-label">
                   <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={layer.opacity}
-                    oninput={(e) => {
-                      const val = parseFloat((e.target as HTMLInputElement).value)
-                      mapStore.setLayerOpacity(layer.id, val)
-                    }}
-                    class="opacity-slider"
+                    type="checkbox"
+                    checked={layer.visible}
+                    onchange={() => mapStore.toggleLayer(layer.id)}
                   />
+                  <span class="layer-title" title={layer.title}>{layer.title}</span>
+                  {#if layer.data?.adapter === 'mvt-client'}
+                    <span class="layer-format-pill mvt" title="Vector Tile stream: in-viewport Identify only">MVT</span>
+                  {:else if layer.format === 'esri-feature' || layer.data?.adapter === 'esri-rest'}
+                    <span class="layer-format-pill esri" title="ArcGIS REST Feature Service">ESRI</span>
+                  {/if}
+                </label>
+
+                <button
+                  type="button"
+                  class="layer-chevron-btn"
+                  class:rotated={!isFolded}
+                  onclick={() => toggleLayerFold(layer.id)}
+                  title={isFolded ? 'Expand layer controls' : 'Collapse layer controls'}
+                  aria-label={isFolded ? `Expand ${layer.title}` : `Collapse ${layer.title}`}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Collapsible Details Zone: Opacity + Capabilities + Description -->
+              {#if !isFolded}
+                <div class="layer-details-zone">
+                  {#if layer.visible}
+                    <div class="layer-controls-row">
+                      <div class="opacity-control">
+                        <span class="control-label">Opacity: {Math.round(layer.opacity * 100)}%</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={layer.opacity}
+                          oninput={(e) => {
+                            const val = parseFloat((e.target as HTMLInputElement).value)
+                            mapStore.setLayerOpacity(layer.id, val)
+                          }}
+                          class="opacity-slider"
+                        />
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if layer.description}
+                    <p class="layer-description">{layer.description}</p>
+                  {/if}
+
+                  <!-- Capabilities Badge Line -->
+                  <div class="capabilities-row">
+                    <span class="cap-label">Capabilities:</span>
+                    {#if layer.capabilities?.identify}
+                      <span class="cap-tag active" title="Supports map-click feature identification">Identify</span>
+                    {/if}
+                    {#if layer.capabilities?.queryAttribute || layer.capabilities?.querySpatial}
+                      <span class="cap-tag active" title="Supports attribute SQL and spatial geometric filtering">Query</span>
+                    {:else}
+                      <span class="cap-tag muted" title="Vector tile in-viewport only; global query disabled">No Query</span>
+                    {/if}
+                    {#if layer.capabilities?.buffer}
+                      <span class="cap-tag active" title="Supports proximity buffer analysis">Buffer</span>
+                    {/if}
+                  </div>
+
+                  <!-- Layer Operations / Shortcuts -->
+                  <div class="layer-ops-row">
+                    {#if layer.capabilities?.queryAttribute || layer.capabilities?.querySpatial}
+                      <button
+                        type="button"
+                        class="layer-op-btn"
+                        onclick={() => mapStore.launchModule('query')}
+                        title="Query records in this layer"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <span>Query</span>
+                      </button>
+                    {/if}
+                    {#if layer.capabilities?.buffer}
+                      <button
+                        type="button"
+                        class="layer-op-btn"
+                        onclick={() => mapStore.launchModule('buffer')}
+                        title="Buffer analysis"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <circle cx="12" cy="12" r="9"></circle>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <span>Buffer</span>
+                      </button>
+                    {/if}
+                  </div>
                 </div>
-              </div>
-            {/if}
-
-            <p class="layer-description">{layer.description}</p>
-
-            <!-- Layer Operations / Shortcuts -->
-            {#if layer.operations && layer.operations.length > 0}
-              <div class="layer-ops-row">
-                {#if layer.operations.includes('query-attribute') || layer.operations.includes('query-spatial')}
-                  <button
-                    type="button"
-                    class="layer-op-btn"
-                    onclick={() => mapStore.launchModule('query')}
-                    title="Query records in this layer"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <circle cx="11" cy="11" r="8"></circle>
-                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                    <span>Query</span>
-                  </button>
-                {/if}
-                {#if layer.operations.includes('buffer')}
-                  <button
-                    type="button"
-                    class="layer-op-btn"
-                    onclick={() => mapStore.launchModule('buffer')}
-                    title="Buffer analysis"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <circle cx="12" cy="12" r="9"></circle>
-                      <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                    <span>Buffer</span>
-                  </button>
-                {/if}
-                {#if layer.operations.includes('export')}
-                  <button
-                    type="button"
-                    class="layer-op-btn"
-                    onclick={() => mapStore.launchModule('export')}
-                    title="Export data"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="7 10 12 15 17 10"></polyline>
-                      <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    <span>Export</span>
-                  </button>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {/if}
+              {/if}
+            </div>
+          {/each}
+        </div>
       </div>
     {/each}
   </div>
@@ -268,7 +285,117 @@
   .layer-list {
     display: flex;
     flex-direction: column;
+    gap: 8px;
+  }
+
+  .service-group {
+    display: flex;
+    flex-direction: column;
     gap: 6px;
+    background-color: var(--bg-card-subtle);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+
+  .service-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--border-color);
+  }
+
+  .service-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .service-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .service-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  .service-badge.esri-rest {
+    background-color: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+    border: 1px solid rgba(37, 99, 235, 0.3);
+  }
+
+  .service-badge.geojson-static {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .service-badge.vector-tile {
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+  }
+
+  .service-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .service-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .capabilities-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .cap-label {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .cap-tag {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+  }
+
+  .cap-tag.active {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .cap-tag.muted {
+    background-color: rgba(100, 116, 139, 0.15);
+    color: #64748b;
+  }
+
+  .layer-format-pill.mvt {
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
+    border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
   .layer-item {

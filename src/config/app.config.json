@@ -139,6 +139,342 @@
       }
     ]
   },
+  "services": [
+    {
+      "id": "service-cadastre",
+      "name": "Digital Cadastre Database (Vicmap)",
+      "type": "geojson-static",
+      "url": "local://cadastre",
+      "description": "Victorian land administration parcel fabric with Standard Parcel Identifiers (SPI)",
+      "layers": [
+        {
+          "id": "layer-parcels",
+          "serviceId": "service-cadastre",
+          "title": "Property Cadastre (Parcels)",
+          "category": "cadastre",
+          "geometryType": "polygon",
+          "format": "geojson",
+          "type": "line",
+          "visible": true,
+          "opacity": 0.9,
+          "minZoom": 13,
+          "color": "#334155",
+          "description": "Official property parcel boundaries with Standard Parcel Identifiers (SPI)",
+          "operations": ["query-attribute", "query-spatial", "buffer", "export", "identify", "table"],
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "parcels-source",
+            "style": {
+              "type": "line",
+              "paint": {
+                "line-color": "#334155",
+                "line-width": 1.5
+              }
+            }
+          },
+          "data": {
+            "adapter": "geojson-client",
+            "primaryKey": "id",
+            "displayField": "address",
+            "outFields": ["address", "spi", "lotPlan", "lga", "areaM2", "zone.code"],
+            "fields": [
+              { "key": "address", "label": "Property Address", "type": "string" },
+              { "key": "spi", "label": "Standard Parcel Identifier (SPI)", "type": "string" },
+              { "key": "lotPlan", "label": "Lot / Plan", "type": "string" },
+              {
+                "key": "lga",
+                "label": "Municipality",
+                "type": "select",
+                "options": ["City of Melbourne", "City of Yarra"]
+              },
+              { "key": "areaM2", "label": "Land Area (m²)", "type": "number" },
+              {
+                "key": "zone.code",
+                "label": "Planning Zone Code",
+                "type": "select",
+                "options": ["CCZ1", "C1Z", "GRZ1", "RGZ1", "IN1Z", "PPRZ"]
+              }
+            ]
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "service-vicmap-planning",
+      "name": "Vicmap Planning Schemes (DataVic Cloud)",
+      "type": "esri-rest",
+      "url": "https://spatial.planning.vic.gov.au/gis/rest/services/planning_scheme_zones_vicgrid2020/MapServer",
+      "description": "Statewide Victorian statutory planning scheme zones served live via ArcGIS REST MapServer",
+      "layers": [
+        {
+          "id": "layer-vic-zones-live",
+          "serviceId": "service-vicmap-planning",
+          "serviceLayerId": 0,
+          "title": "Vic Planning Scheme Zones (Live ArcGIS)",
+          "category": "planning",
+          "geometryType": "polygon",
+          "format": "esri-feature",
+          "url": "https://spatial.planning.vic.gov.au/gis/rest/services/planning_scheme_zones_vicgrid2020/MapServer/0",
+          "type": "fill",
+          "visible": false,
+          "opacity": 0.65,
+          "minZoom": 10,
+          "color": "#2563eb",
+          "description": "Statewide Victorian statutory planning scheme zones served live via ArcGIS REST MapServer",
+          "operations": ["query-attribute", "query-spatial", "export", "identify", "table"],
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "vic-zones-live-source",
+            "style": {
+              "type": "fill",
+              "paint": {
+                "fill-color": "#2563eb",
+                "fill-opacity": 0.65
+              }
+            }
+          },
+          "data": {
+            "adapter": "esri-rest",
+            "url": "https://spatial.planning.vic.gov.au/gis/rest/services/planning_scheme_zones_vicgrid2020/MapServer/0",
+            "primaryKey": "OBJECTID",
+            "displayField": "zone_code",
+            "outFields": ["zone_code", "zone_description", "lga", "scheme_code", "zone_code_group_label"],
+            "fields": [
+              { "key": "zone_code", "label": "Zone Code (e.g. CCZ1, C1Z, GRZ1)", "type": "string" },
+              { "key": "zone_description", "label": "Zone Description", "type": "string" },
+              { "key": "lga", "label": "Municipality (LGA)", "type": "string" },
+              { "key": "scheme_code", "label": "Planning Scheme Code", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "service-planning-cache",
+      "name": "Victorian Planning Scheme (Local Engine)",
+      "type": "geojson-static",
+      "url": "local://planning-zones",
+      "description": "Statutory zoning and overlay spatial boundaries cached for high-performance offline GIS analysis",
+      "layers": [
+        {
+          "id": "layer-zones",
+          "serviceId": "service-planning-cache",
+          "title": "Planning Scheme Zones (Local Cache)",
+          "category": "planning",
+          "geometryType": "polygon",
+          "format": "geojson",
+          "type": "fill",
+          "visible": true,
+          "opacity": 0.6,
+          "minZoom": 11,
+          "color": "#3b82f6",
+          "description": "Victorian Planning Scheme statutory zoning (Residential, Commercial, Industrial, Public)",
+          "operations": ["query-attribute", "query-spatial", "identify", "export", "table"],
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "zones-source",
+            "style": {
+              "type": "fill",
+              "paint": {
+                "fill-color": ["get", "color"],
+                "fill-opacity": 0.5
+              }
+            }
+          },
+          "data": {
+            "adapter": "geojson-client",
+            "primaryKey": "code",
+            "displayField": "code",
+            "outFields": ["code", "name", "category"],
+            "fields": [
+              { "key": "code", "label": "Zone Code", "type": "string" },
+              { "key": "name", "label": "Zone Name", "type": "string" },
+              {
+                "key": "category",
+                "label": "Category",
+                "type": "select",
+                "options": ["residential", "commercial", "industrial", "public", "rural"]
+              }
+            ]
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        },
+        {
+          "id": "layer-overlays",
+          "serviceId": "service-planning-cache",
+          "title": "Planning Overlays (Heritage / Design / BMO)",
+          "category": "overlays",
+          "geometryType": "polygon",
+          "format": "geojson",
+          "type": "fill",
+          "visible": true,
+          "opacity": 0.5,
+          "minZoom": 12,
+          "color": "#f59e0b",
+          "description": "Statutory planning overlays affecting building controls and environmental protections",
+          "operations": ["query-attribute", "query-spatial", "identify", "export"],
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "overlays-source",
+            "style": {
+              "type": "fill",
+              "paint": {
+                "fill-color": ["get", "color"],
+                "fill-opacity": 0.4
+              }
+            }
+          },
+          "data": {
+            "adapter": "geojson-client",
+            "primaryKey": "code",
+            "displayField": "code",
+            "outFields": ["code", "name", "category"],
+            "fields": [
+              { "key": "code", "label": "Overlay Code", "type": "string" },
+              { "key": "name", "label": "Overlay Name", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": true,
+            "querySpatial": true,
+            "buffer": true,
+            "export": true,
+            "table": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "service-boundaries",
+      "name": "Victorian Administrative Boundaries",
+      "type": "geojson-static",
+      "url": "local://boundaries",
+      "description": "Victorian Local Government Area (LGA) council municipal borders",
+      "layers": [
+        {
+          "id": "layer-lga",
+          "serviceId": "service-boundaries",
+          "title": "Municipal Boundaries (LGA)",
+          "category": "boundaries",
+          "geometryType": "polygon",
+          "format": "geojson",
+          "type": "line",
+          "visible": true,
+          "opacity": 0.8,
+          "minZoom": 9,
+          "color": "#64748b",
+          "description": "Victorian Local Government Area (LGA) council municipal borders",
+          "operations": ["query-spatial", "identify"],
+          "rendering": {
+            "format": "geojson",
+            "sourceId": "lga-source",
+            "style": {
+              "type": "line",
+              "paint": {
+                "line-color": "#64748b",
+                "line-width": 2,
+                "line-dasharray": [4, 2]
+              }
+            }
+          },
+          "data": {
+            "adapter": "geojson-client",
+            "primaryKey": "lga_name",
+            "displayField": "lga_name",
+            "outFields": ["lga_name", "lga_code"],
+            "fields": [
+              { "key": "lga_name", "label": "Council Municipality", "type": "string" }
+            ]
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": false,
+            "querySpatial": true,
+            "buffer": false,
+            "export": true,
+            "table": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "service-mvt-transport",
+      "name": "Public Transport Network (Vector Tiles)",
+      "type": "vector-tile",
+      "url": "https://basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt",
+      "description": "Vector tile stream for transit corridors (Viewport Identify only, query disabled)",
+      "layers": [
+        {
+          "id": "layer-transport",
+          "serviceId": "service-mvt-transport",
+          "title": "Transit Corridors & Rail Lines",
+          "category": "transport",
+          "geometryType": "line",
+          "format": "vector-tile",
+          "type": "line",
+          "visible": false,
+          "opacity": 0.7,
+          "minZoom": 11,
+          "color": "#0284c7",
+          "description": "Metropolitan passenger rail, tram tracks, and transport corridors (Vector Tile stream)",
+          "operations": ["identify"],
+          "rendering": {
+            "format": "vector",
+            "sourceId": "transport-mvt-source",
+            "maplibreSource": {
+              "type": "vector",
+              "tiles": ["https://basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt"]
+            },
+            "style": {
+              "type": "line",
+              "sourceLayer": "transportation",
+              "paint": {
+                "line-color": "#0284c7",
+                "line-width": 2
+              }
+            }
+          },
+          "data": {
+            "adapter": "mvt-client",
+            "primaryKey": "id",
+            "displayField": "class"
+          },
+          "capabilities": {
+            "identify": true,
+            "queryAttribute": false,
+            "querySpatial": false,
+            "buffer": false,
+            "export": false,
+            "table": false
+          }
+        }
+      ]
+    }
+  ],
   "layers": [
     {
       "id": "layer-parcels",

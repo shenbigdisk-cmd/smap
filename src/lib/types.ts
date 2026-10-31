@@ -115,6 +115,15 @@ export type LayerFormat =
   | 'wfs'
   | 'raster-xyz'
 
+export type ServiceType =
+  | 'esri-rest'
+  | 'wms'
+  | 'wfs'
+  | 'ogc-api'
+  | 'vector-tile'
+  | 'geojson-static'
+  | 'pmtiles'
+
 export interface LayerFieldConfig {
   key: string
   label: string
@@ -128,21 +137,75 @@ export interface LayerQueryConfig {
   fields?: LayerFieldConfig[]
 }
 
-export interface OperationalLayer {
-  id: string
-  title: string
-  category: 'planning' | 'overlays' | 'cadastre' | 'boundaries' | 'buildings'
-  format?: LayerFormat
-  url?: string
-  visible: boolean
-  opacity: number
+export interface LayerCapabilities {
+  identify: boolean
+  queryAttribute: boolean
+  querySpatial: boolean
+  buffer: boolean
+  export: boolean
+  table: boolean
+}
+
+export interface LayerRenderingConfig {
+  format: 'vector' | 'raster' | 'geojson'
+  sourceId?: string
+  maplibreSource?: any
+  style: {
+    type: 'fill' | 'line' | 'circle' | 'raster' | 'fill-extrusion'
+    sourceLayer?: string
+    paint?: Record<string, any>
+    layout?: Record<string, any>
+    filter?: any
+  }
   minZoom?: number
   maxZoom?: number
+}
+
+export interface LayerDataConfig {
+  adapter: 'esri-rest' | 'wfs' | 'wms' | 'ogc-api' | 'geojson-client' | 'mvt-client'
+  url?: string
+  serviceLayerId?: number | string
+  primaryKey?: string
+  displayField?: string
+  titleTemplate?: string
+  outFields?: string[]
+  fields?: LayerFieldConfig[]
+}
+
+export interface ServiceLayer {
+  id: string
+  serviceId: string
+  serviceLayerId?: number | string
+  title: string
+  category: 'planning' | 'overlays' | 'cadastre' | 'boundaries' | 'buildings' | string
+  geometryType?: 'point' | 'line' | 'polygon'
+  description?: string
+  visible: boolean
+  opacity: number
   color: string
-  type: 'fill' | 'line' | 'circle' | 'fill-extrusion'
-  description: string
+  minZoom?: number
+  maxZoom?: number
+  rendering: LayerRenderingConfig
+  data: LayerDataConfig
+  capabilities: LayerCapabilities
+  // Convenience & backward compatibility fields
+  format?: LayerFormat
+  url?: string
+  type?: 'fill' | 'line' | 'circle' | 'fill-extrusion'
   operations?: LayerOperation[]
   queryConfig?: LayerQueryConfig
+}
+
+export type OperationalLayer = ServiceLayer
+
+export interface ServiceDefinition {
+  id: string
+  name: string
+  type: ServiceType
+  url: string
+  attribution?: string
+  description?: string
+  layers: ServiceLayer[]
 }
 
 export interface MapInteractionHandler {

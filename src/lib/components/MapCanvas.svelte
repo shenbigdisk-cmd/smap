@@ -191,17 +191,8 @@
         return
       }
 
-      // 4. Query parcels layer under cursor
-      if (!map) return
-      if (!map.getLayer('layer-parcels-fill')) return
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['layer-parcels-fill']
-      })
-
-      if (features.length > 0 && features[0].properties) {
-        const id = features[0].properties.id
-        mapStore.selectParcelById(id)
-      }
+      // 4. Multi-Layer Identify across all visible operational layers
+      mapStore.identifyAtCoordinate(coord, e.point)
     })
 
     // Window KeyDown Guardrail (Esc cancels current handler)
@@ -551,6 +542,26 @@
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'base_height'],
           'fill-extrusion-opacity': 0.8
+        }
+      })
+    }
+
+    // 7. Public Transport Vector Tiles (Demonstrates MVT with Identify-only capability)
+    if (!map.getSource('transport-mvt-source')) {
+      map.addSource('transport-mvt-source', {
+        type: 'vector',
+        tiles: ['https://basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt']
+      })
+    }
+    if (!map.getLayer('layer-transport-line')) {
+      map.addLayer({
+        id: 'layer-transport-line',
+        type: 'line',
+        source: 'transport-mvt-source',
+        'source-layer': 'transportation',
+        paint: {
+          'line-color': '#0284c7',
+          'line-width': 2
         }
       })
     }

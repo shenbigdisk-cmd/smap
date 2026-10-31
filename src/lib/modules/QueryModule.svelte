@@ -15,8 +15,8 @@
   let queryableLayers = $derived(
     mapStore.layers.filter(
       (l) =>
-        l.operations?.includes('query-attribute') ||
-        l.operations?.includes('query-spatial')
+        Boolean(l.capabilities?.queryAttribute || l.capabilities?.querySpatial) ||
+        Boolean(l.operations?.includes('query-attribute') || l.operations?.includes('query-spatial'))
     )
   )
 
@@ -221,7 +221,7 @@
       const results = await executeLayerQuery(
         selectedLayer,
         queryDef,
-        SAMPLE_PARCELS
+        mapStore.map
       )
 
       mapStore.setQueryResults(results)

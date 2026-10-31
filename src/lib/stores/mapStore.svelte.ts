@@ -1,7 +1,16 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { TerraDraw } from 'terra-draw'
 import { MAP_CONFIG } from '../config/map.config'
-import { DEFAULT_BOOKMARKS, SAMPLE_PARCELS, SEARCH_INDEX } from '../data/sampleData'
+import {
+  BUILDINGS_3D_GEOJSON,
+  DEFAULT_BOOKMARKS,
+  LGA_BOUNDARIES_GEOJSON,
+  OVERLAYS_GEOJSON,
+  SAMPLE_PARCELS,
+  SEARCH_INDEX,
+  ZONE_POLYGONS_GEOJSON
+} from '../data/sampleData'
+import { dataAdapterRegistry } from '../services/adapters/DataAdapterRegistry'
 import type {
   AppTheme,
   BasemapId,
@@ -17,6 +26,7 @@ import type {
   ParcelFeature,
   QueryResultCollection,
   SearchResult,
+  ServiceDefinition,
   SurfaceMode,
   UserSettings,
   WebGISModule
@@ -63,19 +73,47 @@ class MapStore {
   currentZoom = $state<number>(14.8)
   is3dActive = $state(false)
 
-  // Operational Layers State
+  // Services & Operational Layers State
+  services = $state<ServiceDefinition[]>([...MAP_CONFIG.services.map((s) => ({ ...s }))])
   layers = $state<OperationalLayer[]>([
     ...MAP_CONFIG.operationalLayers.map((l) => ({ ...l })),
     {
       id: 'layer-buildings-3d',
+      serviceId: 'service-cadastre',
       title: '3D Building Heights (Melbourne CBD)',
       category: 'buildings',
+      geometryType: 'polygon',
       visible: true,
       opacity: 0.8,
       minZoom: 14,
       color: '#94a3b8',
       type: 'fill-extrusion',
-      description: 'Extruded 3D building architectural masses with height data'
+      description: 'Extruded 3D building architectural masses with height data',
+      rendering: {
+        format: 'geojson',
+        sourceId: 'buildings-source',
+        style: {
+          type: 'fill-extrusion',
+          paint: {
+            'fill-extrusion-color': '#94a3b8',
+            'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-opacity': 0.8
+          }
+        }
+      },
+      data: {
+        adapter: 'geojson-client',
+        primaryKey: 'id',
+        displayField: 'name'
+      },
+      capabilities: {
+        identify: true,
+        queryAttribute: false,
+        querySpatial: false,
+        buffer: false,
+        export: false,
+        table: false
+      }
     }
   ])
 
@@ -135,11 +173,39 @@ class MapStore {
 
   constructor() {
     this.initMobileDetection()
+    this.initGeoJsonAdapter()
     this.loadCustomBookmarks()
     this.loadModulesOrder()
     this.loadPinnedPreferences()
     this.loadSettings()
     this.loadToolboxPreference()
+  }
+
+  private initGeoJsonAdapter() {
+    dataAdapterRegistry.geoJsonAdapter.registerFeatures(
+      'layer-parcels',
+      SAMPLE_PARCELS.map((p) => ({
+        id: p.id,
+        geometry: p.geometry,
+        properties: { ...p }
+      }))
+    )
+    dataAdapterRegistry.geoJsonAdapter.registerFeatures(
+      'layer-zones',
+      ZONE_POLYGONS_GEOJSON.features
+    )
+    dataAdapterRegistry.geoJsonAdapter.registerFeatures(
+      'layer-overlays',
+      OVERLAYS_GEOJSON.features
+    )
+    dataAdapterRegistry.geoJsonAdapter.registerFeatures(
+      'layer-lga',
+      LGA_BOUNDARIES_GEOJSON.features
+    )
+    dataAdapterRegistry.geoJsonAdapter.registerFeatures(
+      'layer-buildings-3d',
+      BUILDINGS_3D_GEOJSON.features
+    )
   }
 
   private initMobileDetection() {
@@ -645,6 +711,10 @@ class MapStore {
     const layer = this.layers.find((l) => l.id === layerId)
     if (layer) {
       layer.visible = !layer.visible
+      for (const s of this.services) {
+        const sl = s.layers.find((l) => l.id === layerId)
+        if (sl) sl.visible = layer.visible
+      }
       this.updateMapLayerVisibility(layer)
     }
   }
@@ -653,7 +723,52 @@ class MapStore {
     const layer = this.layers.find((l) => l.id === layerId)
     if (layer) {
       layer.opacity = opacity
+      for (const s of this.services) {
+        const sl = s.layers.find((l) => l.id === layerId)
+        if (sl) sl.opacity = opacity
+      }
       this.updateMapLayerOpacity(layer)
+    }
+  }
+
+  async identifyAtCoordinate(coordinate: [number, number], point: { x: number; y: number }) {
+    if (!this.map) return
+
+    // Find all currently visible layers that support identify
+    const visibleIdentifyLayers = this.layers.filter(
+      (l) => l.visible && l.capabilities?.identify
+    )
+
+    if (visibleIdentifyLayers.length === 0) return
+
+    const promises = visibleIdentifyLayers.map(async (layer) => {
+      try {
+        const adapterName =
+          layer.data?.adapter || (layer.format === 'esri-feature' ? 'esri-rest' : 'geojson-client')
+        const adapter = dataAdapterRegistry.getAdapter(adapterName)
+        return await adapter.identify(layer, coordinate, point, this.map)
+      } catch (err) {
+        console.warn(`Identify error for layer ${layer.id}:`, err)
+        return []
+      }
+    })
+
+    const results = (await Promise.all(promises)).flat()
+
+    if (results.length > 0) {
+      this.setQueryResults({
+        layerId: 'multi-identify',
+        layerTitle: `Identified Features (${results.length})`,
+        timestamp: Date.now(),
+        features: results,
+        totalCount: results.length
+      })
+
+      // If parcel is among results, select it as primary parcel
+      const parcelMatch = results.find((f) => f.layerId === 'layer-parcels')
+      if (parcelMatch) {
+        this.selectedParcel = SAMPLE_PARCELS.find((p) => p.id === parcelMatch.id) || null
+      }
     }
   }
 
