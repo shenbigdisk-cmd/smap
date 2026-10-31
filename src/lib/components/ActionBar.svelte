@@ -24,7 +24,6 @@
       <button
         class="rail-btn"
         class:active={mapStore.activeTab === mod.id && mapStore.sidebarOpen}
-        class:current-tab={mapStore.activeTab === mod.id && !mapStore.sidebarOpen}
         onclick={() => handleRailClick(mod.id)}
         title={mod.name}
         aria-label={mod.name}
@@ -43,7 +42,6 @@
     <button
       class="rail-btn"
       class:active={mapStore.activeTab === 'toolbox' && mapStore.sidebarOpen}
-      class:current-tab={mapStore.activeTab === 'toolbox' && !mapStore.sidebarOpen}
       onclick={() => handleRailClick('toolbox')}
       title="Advanced GIS Toolbox"
       aria-label="Toolbox"
@@ -141,6 +139,15 @@
     justify-content: center;
   }
 
+  .rail-btn:focus {
+    outline: none;
+  }
+
+  .rail-btn:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 1px;
+  }
+
   .rail-btn:hover:not(.active) {
     background-color: var(--bg-header-btn);
     color: var(--text-on-header);
@@ -157,13 +164,6 @@
 
   .rail-btn.active .rail-label {
     font-weight: 700;
-  }
-
-  /* SELECTED BUT DRAWER COLLAPSED: Subtle outline so user knows which tab was active */
-  .rail-btn.current-tab {
-    color: var(--text-on-header);
-    background-color: var(--bg-header-btn);
-    border-color: var(--border-header);
   }
 
   .rail-label {
