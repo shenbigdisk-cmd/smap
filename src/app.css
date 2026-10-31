@@ -30,6 +30,11 @@
   --accent-hover: #0369a1;
   --accent-subtle: #e0f2fe;
 
+  --bg-header-active: #0284c7;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #38bdf8;
+  --indicator-header-active: #38bdf8;
+
   color-scheme: light;
   color: var(--text-main);
   background-color: var(--bg-canvas);
@@ -70,6 +75,11 @@
   --accent-hover: #0369a1;
   --accent-subtle: #e0f2fe;
 
+  --bg-header-active: #0284c7;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #38bdf8;
+  --indicator-header-active: #38bdf8;
+
   color-scheme: light;
   color: var(--text-main);
   background-color: var(--bg-canvas);
@@ -104,6 +114,11 @@
   --accent-hover: #0284c7;
   --accent-subtle: #0c4a6e;
 
+  --bg-header-active: #38bdf8;
+  --text-on-header-active: #04111d;
+  --border-header-active: #7dd3fc;
+  --indicator-header-active: #ffffff;
+
   color-scheme: dark;
 }
 
@@ -136,6 +151,11 @@
   --accent-primary: #0f6cbd;
   --accent-hover: #115ea3;
   --accent-subtle: #ebf3fc;
+
+  --bg-header-active: #0f6cbd;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #115ea3;
+  --indicator-header-active: #0f6cbd;
 
   color-scheme: light;
 }
@@ -170,6 +190,11 @@
   --accent-hover: #479ef5;
   --accent-subtle: #112a45;
 
+  --bg-header-active: #2886de;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #479ef5;
+  --indicator-header-active: #479ef5;
+
   color-scheme: dark;
 }
 
@@ -202,6 +227,11 @@
   --accent-primary: #0969da;
   --accent-hover: #0860ca;
   --accent-subtle: #ddf4ff;
+
+  --bg-header-active: #0969da;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #218bff;
+  --indicator-header-active: #54aeff;
 
   color-scheme: light;
 }
@@ -236,6 +266,11 @@
   --accent-hover: #58a6ff;
   --accent-subtle: #121d2f;
 
+  --bg-header-active: #2f81f7;
+  --text-on-header-active: #ffffff;
+  --border-header-active: #58a6ff;
+  --indicator-header-active: #58a6ff;
+
   color-scheme: dark;
 }
 
@@ -269,6 +304,11 @@
   --accent-hover: #533f85;
   --accent-subtle: #eaddff;
 
+  --bg-header-active: #ffffff;
+  --text-on-header-active: #6750a4;
+  --border-header-active: #e8def8;
+  --indicator-header-active: #ffd8e4;
+
   color-scheme: light;
 }
 
@@ -301,6 +341,11 @@
   --accent-primary: #d0bcff;
   --accent-hover: #e8def8;
   --accent-subtle: #4f378b;
+
+  --bg-header-active: #d0bcff;
+  --text-on-header-active: #1d1b20;
+  --border-header-active: #e8def8;
+  --indicator-header-active: #ffffff;
 
   color-scheme: dark;
 }
