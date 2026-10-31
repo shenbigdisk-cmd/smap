@@ -115,7 +115,8 @@
 
   .rail-btn {
     width: 44px;
-    height: 50px;
+    height: 44px;
+    aspect-ratio: 1 / 1;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
@@ -125,11 +126,12 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    padding: 4px 2px;
+    gap: 2px;
+    padding: 3px 2px;
     position: relative;
     transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
     user-select: none;
+    box-sizing: border-box;
   }
 
   .rail-icon-wrap {
