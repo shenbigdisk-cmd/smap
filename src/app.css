@@ -1,0 +1,378 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.4;
+  font-weight: 400;
+
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #f8fafc;
+  --bg-input: #ffffff;
+  --bg-header: #0f172a;
+  --bg-header-btn: #1e293b;
+  --bg-active: #e0f2fe;
+  
+  --border-color: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-subtle: #f1f5f9;
+
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+  --text-on-accent: #ffffff;
+  --text-on-header: #f8fafc;
+  --text-on-header-muted: #94a3b8;
+  --border-header: #1e293b;
+
+  --accent-primary: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-subtle: #e0f2fe;
+
+  color-scheme: light;
+  color: var(--text-main);
+  background-color: var(--bg-canvas);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 1. Default Light: VicPlan Classic */
+:root,
+[data-theme="light"] {
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #f8fafc;
+  --bg-input: #ffffff;
+  --bg-header: #0f172a;
+  --bg-header-btn: #1e293b;
+  --bg-active: #e0f2fe;
+
+  --border-color: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-subtle: #f1f5f9;
+
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+  --text-on-accent: #ffffff;
+  --text-on-header: #f8fafc;
+  --text-on-header-muted: #94a3b8;
+  --border-header: #1e293b;
+
+  --accent-primary: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-subtle: #e0f2fe;
+
+  color-scheme: light;
+  color: var(--text-main);
+  background-color: var(--bg-canvas);
+}
+
+/* 2. Default Dark: Dark Matter */
+[data-theme="dark"] {
+  --bg-canvas: #090d16;
+  --bg-surface: #0f172a;
+  --bg-subtle: #1e293b;
+  --bg-panel: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-subtle: #0f172a;
+  --bg-input: #1e293b;
+  --bg-header: #020617;
+  --bg-header-btn: #0f172a;
+  --bg-active: #075985;
+
+  --border-color: #334155;
+  --border-strong: #475569;
+  --border-subtle: #1e293b;
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+  --text-on-accent: #04111d;
+  --text-on-header: #f8fafc;
+  --text-on-header-muted: #94a3b8;
+  --border-header: #334155;
+
+  --accent-primary: #38bdf8;
+  --accent-hover: #0284c7;
+  --accent-subtle: #0c4a6e;
+
+  color-scheme: dark;
+}
+
+/* 3. Microsoft Fluent 2 (Light) */
+[data-theme="fluent-light"] {
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --bg-canvas: #f5f5f5;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f0f0f0;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #fafafa;
+  --bg-input: #ffffff;
+  --bg-header: #f3f3f3;
+  --bg-header-btn: #e5e5e5;
+  --bg-active: #ebf3fc;
+
+  --border-color: #d1d1d1;
+  --border-strong: #b3b3b3;
+  --border-subtle: #e8e8e8;
+
+  --text-main: #242424;
+  --text-muted: #616161;
+  --text-light: #8a8a8a;
+  --text-on-accent: #ffffff;
+  --text-on-header: #242424;
+  --text-on-header-muted: #616161;
+  --border-header: #e0e0e0;
+
+  --accent-primary: #0f6cbd;
+  --accent-hover: #115ea3;
+  --accent-subtle: #ebf3fc;
+
+  color-scheme: light;
+}
+
+/* 4. Microsoft Fluent 2 (Dark) */
+[data-theme="fluent-dark"] {
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --bg-canvas: #202020;
+  --bg-surface: #292929;
+  --bg-subtle: #323232;
+  --bg-panel: #292929;
+  --bg-card: #2d2d2d;
+  --bg-card-subtle: #242424;
+  --bg-input: #1f1f1f;
+  --bg-header: #1c1c1c;
+  --bg-header-btn: #2d2d2d;
+  --bg-active: #112a45;
+
+  --border-color: #3d3d3d;
+  --border-strong: #525252;
+  --border-subtle: #303030;
+
+  --text-main: #ffffff;
+  --text-muted: #d1d1d1;
+  --text-light: #8a8a8a;
+  --text-on-accent: #ffffff;
+  --text-on-header: #ffffff;
+  --text-on-header-muted: #a6a6a6;
+  --border-header: #333333;
+
+  --accent-primary: #2886de;
+  --accent-hover: #479ef5;
+  --accent-subtle: #112a45;
+
+  color-scheme: dark;
+}
+
+/* 5. GitHub Primer (Light) */
+[data-theme="github-light"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --bg-canvas: #f6f8fa;
+  --bg-surface: #ffffff;
+  --bg-subtle: #eaeef2;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #f6f8fa;
+  --bg-input: #ffffff;
+  --bg-header: #24292f;
+  --bg-header-btn: #32383f;
+  --bg-active: #ddf4ff;
+
+  --border-color: #d0d7de;
+  --border-strong: #afb8c1;
+  --border-subtle: #eaeef2;
+
+  --text-main: #1f2328;
+  --text-muted: #656d76;
+  --text-light: #8c959f;
+  --text-on-accent: #ffffff;
+  --text-on-header: #ffffff;
+  --text-on-header-muted: #8c959f;
+  --border-header: #32383f;
+
+  --accent-primary: #0969da;
+  --accent-hover: #0860ca;
+  --accent-subtle: #ddf4ff;
+
+  color-scheme: light;
+}
+
+/* 6. GitHub Primer (Dark) */
+[data-theme="github-dark"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --bg-canvas: #0d1117;
+  --bg-surface: #161b22;
+  --bg-subtle: #21262d;
+  --bg-panel: #161b22;
+  --bg-card: #21262d;
+  --bg-card-subtle: #161b22;
+  --bg-input: #0d1117;
+  --bg-header: #010409;
+  --bg-header-btn: #21262d;
+  --bg-active: #121d2f;
+
+  --border-color: #30363d;
+  --border-strong: #484f58;
+  --border-subtle: #21262d;
+
+  --text-main: #e6edf3;
+  --text-muted: #8d96a0;
+  --text-light: #6e7681;
+  --text-on-accent: #ffffff;
+  --text-on-header: #e6edf3;
+  --text-on-header-muted: #8d96a0;
+  --border-header: #21262d;
+
+  --accent-primary: #2f81f7;
+  --accent-hover: #58a6ff;
+  --accent-subtle: #121d2f;
+
+  color-scheme: dark;
+}
+
+/* 7. Google Material 3 (Light) */
+[data-theme="material-light"] {
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg-canvas: #f3edf7;
+  --bg-surface: #fef7ff;
+  --bg-subtle: #ece6f0;
+  --bg-panel: #fef7ff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #f7f2fa;
+  --bg-input: #ffffff;
+  --bg-header: #6750a4;
+  --bg-header-btn: #533f85;
+  --bg-active: #eaddff;
+
+  --border-color: #cac4d0;
+  --border-strong: #79747e;
+  --border-subtle: #e8def8;
+
+  --text-main: #1d1b20;
+  --text-muted: #49454f;
+  --text-light: #79747e;
+  --text-on-accent: #ffffff;
+  --text-on-header: #ffffff;
+  --text-on-header-muted: #e8def8;
+  --border-header: #533f85;
+
+  --accent-primary: #6750a4;
+  --accent-hover: #533f85;
+  --accent-subtle: #eaddff;
+
+  color-scheme: light;
+}
+
+/* 8. Google Material 3 (Dark) */
+[data-theme="material-dark"] {
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg-canvas: #141218;
+  --bg-surface: #1d1b20;
+  --bg-subtle: #2b2930;
+  --bg-panel: #1d1b20;
+  --bg-card: #2b2930;
+  --bg-card-subtle: #211f26;
+  --bg-input: #141218;
+  --bg-header: #141218;
+  --bg-header-btn: #2b2930;
+  --bg-active: #381e72;
+
+  --border-color: #49454f;
+  --border-strong: #79747e;
+  --border-subtle: #36343b;
+
+  --text-main: #e6e0e9;
+  --text-muted: #cac4d0;
+  --text-light: #938f99;
+  --text-on-accent: #1d1b20;
+  --text-on-header: #e6e0e9;
+  --text-on-header-muted: #938f99;
+  --border-header: #36343b;
+
+  --accent-primary: #d0bcff;
+  --accent-hover: #e8def8;
+  --accent-subtle: #4f378b;
+
+  color-scheme: dark;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-canvas);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-subtle);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Selection Color */
+::selection {
+  background-color: var(--accent-subtle);
+  color: var(--accent-primary);
+}
+
+[data-color-mode="dark"] ::selection,
+[data-theme="dark"] ::selection {
+  background-color: var(--accent-primary);
+  color: var(--text-on-accent);
+}
+
+/* Accessible Focus States */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input, select {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* MapLibre Geolocation Calm Indicator */
+.maplibregl-user-location-dot::before {
+  animation: none !important;
+}

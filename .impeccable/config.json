@@ -1,0 +1,18 @@
+{
+  "buildPath": "code",
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "dist/**"
+        ],
+        "createdAt": "2026-10-30T11:03:17.573Z",
+        "reason": "MapLibre third-party vendor CSS"
+      }
+    ]
+  }
+}
