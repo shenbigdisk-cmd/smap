@@ -386,45 +386,16 @@
                     ondragend={handleDragEnd}
                     role="listitem"
                   >
-                    <!-- Order controls: Drag handle, index badge, and Up/Down buttons -->
-                    <div class="order-controls">
-                      <div class="drag-grip" title="Drag to reorder" aria-hidden="true">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <circle cx="9" cy="6" r="1.5" fill="currentColor"></circle>
-                          <circle cx="15" cy="6" r="1.5" fill="currentColor"></circle>
-                          <circle cx="9" cy="12" r="1.5" fill="currentColor"></circle>
-                          <circle cx="15" cy="12" r="1.5" fill="currentColor"></circle>
-                          <circle cx="9" cy="18" r="1.5" fill="currentColor"></circle>
-                          <circle cx="15" cy="18" r="1.5" fill="currentColor"></circle>
-                        </svg>
-                      </div>
-                      <span class="order-num-badge">{index + 1}</span>
-                      <div class="arrow-btn-stack">
-                        <button
-                          type="button"
-                          class="order-arrow-btn"
-                          disabled={index === 0}
-                          onclick={() => mapStore.moveModule(index, index - 1)}
-                          title="Move {mod.name} up"
-                          aria-label="Move {mod.name} up"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <polyline points="18 15 12 9 6 15"></polyline>
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          class="order-arrow-btn"
-                          disabled={index === mapStore.modules.length - 1}
-                          onclick={() => mapStore.moveModule(index, index + 1)}
-                          title="Move {mod.name} down"
-                          aria-label="Move {mod.name} down"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                          </svg>
-                        </button>
-                      </div>
+                    <!-- Drag handle for reordering -->
+                    <div class="drag-grip" title="Drag to reorder" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="9" cy="6" r="1.5" fill="currentColor"></circle>
+                        <circle cx="15" cy="6" r="1.5" fill="currentColor"></circle>
+                        <circle cx="9" cy="12" r="1.5" fill="currentColor"></circle>
+                        <circle cx="15" cy="12" r="1.5" fill="currentColor"></circle>
+                        <circle cx="9" cy="18" r="1.5" fill="currentColor"></circle>
+                        <circle cx="15" cy="18" r="1.5" fill="currentColor"></circle>
+                      </svg>
                     </div>
 
                     <!-- Module Details -->
@@ -962,72 +933,24 @@
     opacity: 0.35;
   }
 
-  .order-controls {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-shrink: 0;
-  }
-
   .drag-grip {
     cursor: grab;
     color: var(--text-muted);
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.5;
-    transition: opacity 0.15s, color 0.15s;
+    padding: 6px 4px;
+    border-radius: 4px;
+    opacity: 0.55;
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
     user-select: none;
+    flex-shrink: 0;
   }
 
   .drag-grip:hover {
     opacity: 1;
     color: var(--accent-primary);
-  }
-
-  .order-num-badge {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 3px;
     background-color: var(--bg-subtle);
-    color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 700;
-  }
-
-  .arrow-btn-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .order-arrow-btn {
-    width: 18px;
-    height: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-subtle);
-    border: 1px solid var(--border-color);
-    border-radius: 2px;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0;
-    transition: all 0.12s ease;
-  }
-
-  .order-arrow-btn:hover:not(:disabled) {
-    background-color: var(--accent-primary);
-    color: var(--text-on-accent);
-    border-color: var(--accent-primary);
-  }
-
-  .order-arrow-btn:disabled {
-    opacity: 0.25;
-    cursor: not-allowed;
   }
 
   .mod-meta {
