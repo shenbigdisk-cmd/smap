@@ -45,6 +45,7 @@ export interface RawLayerConfig {
   render?: LayerRenderDescriptor
   feature_service?: FeatureServiceDescriptor
   capabilities?: Partial<LayerCapabilities>
+  legend?: any
   // Backward compatibility legacy fields
   rendering?: any
   data?: any

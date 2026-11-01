@@ -1,15 +1,33 @@
 <script lang="ts">
   import { mapStore } from '../stores/mapStore.svelte'
   import { MAP_CONFIG } from '../config/map.config'
-  import { PLANNING_ZONES, PLANNING_OVERLAYS } from '../data/sampleData'
+  import { legendService } from '../services/legendService'
   import type { BasemapId, ServiceDefinition } from '../types'
 
   let legendExpanded = $state(false)
+  let expandedSublayerLegendId = $state<string | null>(null)
 
   let selectedServiceId = $derived(mapStore.layersConfigServiceId)
   let selectedService = $derived<ServiceDefinition | undefined>(
     mapStore.services.find((s) => s.id === selectedServiceId)
   )
+
+  let activeLegendGroups = $derived.by(() => {
+    const _v = mapStore.viewportVersion
+    return legendService.getAllActiveLegendGroups(
+      mapStore.layers,
+      mapStore.map,
+      !mapStore.dynamicLegendEnabled
+    )
+  })
+
+  let totalVisibleSwatches = $derived(
+    activeLegendGroups.reduce((acc, g) => acc + g.items.length, 0)
+  )
+
+  function toggleSublayerLegend(layerId: string) {
+    expandedSublayerLegendId = expandedSublayerLegendId === layerId ? null : layerId
+  }
 
   function openServiceConfig(serviceId: string) {
     mapStore.openServiceConfig(serviceId)
@@ -17,6 +35,7 @@
 
   function backToServicesList() {
     mapStore.closeServiceConfig()
+    expandedSublayerLegendId = null
   }
 </script>
 
@@ -60,26 +79,73 @@
         <div class="sublayers-list">
           {#each selectedService.layers as layer (layer.id)}
             {@const isLayerEnabled = layer.enabled !== false && selectedService.enabled !== false}
-            <div class="sublayer-item" class:disabled={!layer.visible || !isLayerEnabled}>
-              <label class="sublayer-toggle">
-                <input
-                  type="checkbox"
-                  checked={layer.visible && isLayerEnabled}
-                  disabled={!isLayerEnabled}
-                  onchange={() => mapStore.toggleLayer(layer.id)}
-                />
-                <span class="sublayer-name" title={layer.title}>{layer.title}</span>
-              </label>
+            {@const layerLegend = legendService.getLayerLegendGroup(layer, mapStore.map, !mapStore.dynamicLegendEnabled)}
+            <div class="sublayer-item-wrapper">
+              <div class="sublayer-item" class:disabled={!layer.visible || !isLayerEnabled}>
+                <label class="sublayer-toggle">
+                  <input
+                    type="checkbox"
+                    checked={layer.visible && isLayerEnabled}
+                    disabled={!isLayerEnabled}
+                    onchange={() => mapStore.toggleLayer(layer.id)}
+                  />
+                  {#if layer.color}
+                    <span class="sublayer-swatch-dot" style="background-color: {layer.color};"></span>
+                  {/if}
+                  <span class="sublayer-name" title={layer.title}>{layer.title}</span>
+                </label>
 
-              <button
-                type="button"
-                class="sublayer-mute-btn"
-                class:muted={!isLayerEnabled}
-                onclick={() => mapStore.toggleLayerEnabled(layer.id)}
-                title={isLayerEnabled ? "Disable sublayer" : "Enable sublayer"}
-              >
-                {isLayerEnabled ? 'Active' : 'Disabled'}
-              </button>
+                <div class="sublayer-actions">
+                  {#if layerLegend && layerLegend.items.length > 0}
+                    <button
+                      type="button"
+                      class="sublayer-legend-btn"
+                      class:active={expandedSublayerLegendId === layer.id}
+                      onclick={() => toggleSublayerLegend(layer.id)}
+                      title="Toggle layer legend"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                      </svg>
+                    </button>
+                  {/if}
+
+                  <button
+                    type="button"
+                    class="sublayer-mute-btn"
+                    class:muted={!isLayerEnabled}
+                    onclick={() => mapStore.toggleLayerEnabled(layer.id)}
+                    title={isLayerEnabled ? "Disable sublayer" : "Enable sublayer"}
+                  >
+                    {isLayerEnabled ? 'Active' : 'Disabled'}
+                  </button>
+                </div>
+              </div>
+
+              {#if expandedSublayerLegendId === layer.id && layerLegend}
+                <div class="sublayer-inline-legend">
+                  <div class="swatches-grid">
+                    {#each layerLegend.items as item}
+                      <div class="legend-swatch-item">
+                        <div
+                          class="swatch-color"
+                          class:pattern={item.pattern === 'diagonal'}
+                          style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
+                        ></div>
+                        <div class="swatch-info">
+                          {#if item.code}
+                            <span class="swatch-code">{item.code}</span>
+                          {/if}
+                          <span class="swatch-name" title={item.label}>{item.label}</span>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -139,69 +205,100 @@
 
     <!-- 3. Symbology Legend Accordion -->
     <div class="legend-section">
-      <button
-        class="legend-header-btn"
-        onclick={() => (legendExpanded = !legendExpanded)}
-      >
-        <div class="legend-header-left">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-          <span>MAP SYMBOLOGY LEGEND</span>
-        </div>
-        <svg
-          class="chevron"
-          class:rotated={legendExpanded}
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <div class="legend-header-bar">
+        <button
+          class="legend-header-btn"
+          onclick={() => (legendExpanded = !legendExpanded)}
         >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
+          <div class="legend-header-left">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>MAP SYMBOLOGY LEGEND</span>
+          </div>
+          <svg
+            class="chevron"
+            class:rotated={legendExpanded}
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        {#if legendExpanded}
+          <!-- In-View vs All Dynamic Filter Toggle Pill -->
+          <div class="legend-dyn-pill">
+            <button
+              type="button"
+              class="dyn-btn"
+              class:active={mapStore.dynamicLegendEnabled}
+              onclick={() => (mapStore.dynamicLegendEnabled = true)}
+              title="Show only swatches for features in current view"
+            >
+              In View
+            </button>
+            <button
+              type="button"
+              class="dyn-btn"
+              class:active={!mapStore.dynamicLegendEnabled}
+              onclick={() => (mapStore.dynamicLegendEnabled = false)}
+              title="Show all symbology swatches"
+            >
+              All
+            </button>
+            {#if mapStore.dynamicLegendEnabled}
+              <span class="dyn-badge">{totalVisibleSwatches}</span>
+            {/if}
+          </div>
+        {/if}
+      </div>
 
       {#if legendExpanded}
         <div class="legend-content">
-          <div class="legend-group">
-            <span class="group-title">Planning Scheme Zones</span>
-            <div class="swatches-grid">
-              {#each Object.values(PLANNING_ZONES) as zone}
-                <div class="legend-swatch-item">
-                  <div
-                    class="swatch-color"
-                    style="background-color: {zone.fillColor}; border-color: {zone.strokeColor};"
-                  ></div>
-                  <div class="swatch-info">
-                    <span class="swatch-code">{zone.code}</span>
-                    <span class="swatch-name">{zone.name}</span>
-                  </div>
-                </div>
-              {/each}
+          {#if activeLegendGroups.length === 0}
+            <div class="legend-empty">
+              <span>No active layer symbology in current view</span>
             </div>
-          </div>
-
-          <div class="legend-group">
-            <span class="group-title">Planning Overlays</span>
-            <div class="swatches-grid">
-              {#each Object.values(PLANNING_OVERLAYS) as overlay}
-                <div class="legend-swatch-item">
-                  <div
-                    class="swatch-color pattern"
-                    style="background-color: {overlay.fillColor}; border-color: {overlay.strokeColor};"
-                  ></div>
-                  <div class="swatch-info">
-                    <span class="swatch-code">{overlay.code}</span>
-                    <span class="swatch-name">{overlay.name}</span>
-                  </div>
+          {:else}
+            {#each activeLegendGroups as group (group.layerId)}
+              <div class="legend-group">
+                <div class="group-title-row">
+                  <span class="group-title">{group.title}</span>
+                  {#if group.dynamic && mapStore.dynamicLegendEnabled}
+                    <span class="group-count">({group.items.length}/{group.totalItemsCount})</span>
+                  {/if}
                 </div>
-              {/each}
-            </div>
-          </div>
+                {#if group.items.length === 0}
+                  <span class="group-empty-hint">None in current extent</span>
+                {:else}
+                  <div class="swatches-grid">
+                    {#each group.items as item}
+                      <div class="legend-swatch-item">
+                        <div
+                          class="swatch-color"
+                          class:pattern={item.pattern === 'diagonal'}
+                          style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
+                        ></div>
+                        <div class="swatch-info">
+                          {#if item.code}
+                            <span class="swatch-code">{item.code}</span>
+                          {/if}
+                          <span class="swatch-name" title={item.label}>{item.label}</span>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {/if}
         </div>
       {/if}
     </div>
@@ -457,6 +554,57 @@
     padding-right: 2px;
   }
 
+  .sublayer-item-wrapper {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .sublayer-item-wrapper .sublayer-item {
+    border-bottom: none;
+  }
+
+  .sublayer-swatch-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .sublayer-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .sublayer-legend-btn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+
+  .sublayer-legend-btn:hover,
+  .sublayer-legend-btn.active {
+    background-color: var(--accent-subtle);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  .sublayer-inline-legend {
+    padding: 6px 8px 8px 24px;
+    background-color: var(--bg-card-subtle);
+    border-top: 1px dashed var(--border-subtle);
+  }
+
   .sublayer-item {
     display: flex;
     align-items: center;
@@ -510,6 +658,55 @@
     background-color: var(--bg-card);
     overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .legend-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: transparent;
+  }
+
+  .legend-header-bar .legend-header-btn {
+    flex: 1;
+  }
+
+  .legend-dyn-pill {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    margin-right: 8px;
+    background-color: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+  }
+
+  .dyn-btn {
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+
+  .dyn-btn.active {
+    background-color: var(--bg-card);
+    color: var(--accent-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .dyn-badge {
+    padding: 0 4px;
+    font-size: 9px;
+    font-weight: 700;
+    background-color: var(--accent-subtle);
+    color: var(--accent-primary);
+    border-radius: 9999px;
   }
 
   .legend-header-btn {
@@ -608,6 +805,36 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .swatch-color.pattern {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      currentColor 2px,
+      currentColor 3px
+    );
+  }
+
+  .group-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .group-count {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--accent-primary);
+  }
+
+  .group-empty-hint,
+  .legend-empty {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 2px 0;
   }
 
   /* ========================================================================= */

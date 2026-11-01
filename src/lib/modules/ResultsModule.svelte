@@ -1,6 +1,7 @@
 <script lang="ts">
   import { mapStore } from '../stores/mapStore.svelte'
   import { formatArea } from '../utils/geodesy'
+  import { exportFeaturesToGeoJson, exportFeaturesToCsv } from '../utils/exportMap'
   import type { QueryResultFeature } from '../types'
 
   let activeView = $derived(mapStore.resultsViewMode)
@@ -71,30 +72,12 @@
 
   function exportResultsCsv() {
     if (!activeCollection || activeCollection.features.length === 0) return
-    const featList = activeCollection.features
-    const keys = Array.from(
-      new Set(featList.flatMap((f) => Object.keys(f.properties || {})))
-    )
-    const header = ['Title', 'Layer', ...keys].join(',')
-    const rows = featList.map((f) => {
-      const line = [
-        `"${f.title.replace(/"/g, '""')}"`,
-        `"${(f.layerTitle || f.layerId).replace(/"/g, '""')}"`,
-        ...keys.map((k) => {
-          const val = f.properties?.[k]
-          return typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val ?? ''
-        })
-      ]
-      return line.join(',')
-    })
-    const csvContent = [header, ...rows].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${activeCollection.source || 'feature'}-results-${Date.now()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    exportFeaturesToCsv(activeCollection.features, `${activeCollection.source || 'feature'}-results`)
+  }
+
+  function exportResultsGeoJson() {
+    if (!activeCollection || activeCollection.features.length === 0) return
+    exportFeaturesToGeoJson(activeCollection.features, `${activeCollection.source || 'feature'}-results`)
   }
 
   function copyFeatureJson() {
@@ -186,6 +169,15 @@
             </button>
           {/if}
         </div>
+
+        <button type="button" class="export-compact-btn" onclick={exportResultsGeoJson} title="Export results to GeoJSON">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+          <span>GeoJSON</span>
+        </button>
 
         <button type="button" class="export-compact-btn" onclick={exportResultsCsv} title="Export results to CSV">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

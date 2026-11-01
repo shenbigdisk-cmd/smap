@@ -165,6 +165,7 @@ export interface LayerRenderDescriptor {
   sublayers?: number[]
   format?: string
   transparent?: boolean
+  tileSize?: number
   minzoom?: number
   maxzoom?: number
   paint?: Record<string, any>
@@ -246,6 +247,24 @@ export interface LayerDataConfig {
   fields?: LayerFieldConfig[]
 }
 
+export interface LegendItem {
+  label: string
+  code?: string
+  color: string
+  stroke?: string
+  border?: string
+  pattern?: string
+  value?: any
+  property?: string
+}
+
+export interface LayerLegendConfig {
+  title?: string
+  dynamic?: boolean // When true, only show legend items for features currently visible in the map viewport
+  property?: string // Attribute property key used to match legend items (e.g. 'code', 'zoneCode')
+  items: LegendItem[]
+}
+
 export interface ServiceLayer {
   id: string
   serviceId: string
@@ -263,6 +282,7 @@ export interface ServiceLayer {
   rendering: LayerRenderingConfig
   data: LayerDataConfig
   capabilities: LayerCapabilities
+  legend?: LayerLegendConfig
   // OmniLayer Dual-Channel Specification
   render?: LayerRenderDescriptor
   feature_service?: FeatureServiceDescriptor
@@ -427,5 +447,6 @@ export interface UserPrintSettings {
   showNorthArrow: boolean
   showCoordinates: boolean
   showLegend: boolean
+  dynamicLegend?: boolean
   showPrintFrame: boolean
 }

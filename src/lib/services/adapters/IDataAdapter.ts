@@ -18,6 +18,16 @@ export interface IDataAdapter {
   ): Promise<QueryResultFeature[]>
 
   /**
+   * Optional batched identify for services that support multi-sublayer identification (e.g. ArcGIS MapServer)
+   */
+  identifyBatch?(
+    layers: OperationalLayer[],
+    coordinate: [number, number],
+    point: { x: number; y: number },
+    map: MapLibreMap | null
+  ): Promise<QueryResultFeature[]>
+
+  /**
    * Executes attribute and/or spatial query
    */
   query(

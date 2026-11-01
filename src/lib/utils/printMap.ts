@@ -7,6 +7,22 @@ import { MAP_CONFIG } from '../config/map.config'
 import type { PaperSize, PageOrientation, PrintDpi, PrintFormat } from '../types'
 export type { PaperSize, PageOrientation, PrintDpi, PrintFormat }
 
+export interface PrintLegendItem {
+  label: string
+  color: string
+  border?: string
+  stroke?: string
+  pattern?: string
+  code?: string
+}
+
+export interface PrintLegendGroup {
+  layerId: string
+  title: string
+  dynamic?: boolean
+  items: PrintLegendItem[]
+}
+
 export interface PrintConfig {
   title: string
   paperSize: PaperSize
@@ -17,7 +33,9 @@ export interface PrintConfig {
   showNorthArrow: boolean
   showCoordinates: boolean
   showLegend: boolean
-  legendItems?: Array<{ label: string; color: string; border?: string }>
+  dynamicLegend?: boolean
+  legendGroups?: PrintLegendGroup[]
+  legendItems?: PrintLegendItem[]
   padLeft?: number
 }
 
@@ -61,14 +79,16 @@ async function captureHighResMapCanvas(
 ): Promise<HTMLCanvasElement> {
   const liveCanvas = liveMap.getCanvas()
 
-  // Create hidden offscreen container with exact target dimensions
+  // Create offscreen container with exact target dimensions
+  // Using opacity 0 instead of visibility hidden so browser compositor executes WebGL rendering
   const offscreenContainer = document.createElement('div')
   offscreenContainer.style.width = `${targetWidth}px`
   offscreenContainer.style.height = `${targetHeight}px`
   offscreenContainer.style.position = 'fixed'
-  offscreenContainer.style.left = '-99999px'
-  offscreenContainer.style.top = '-99999px'
-  offscreenContainer.style.visibility = 'hidden'
+  offscreenContainer.style.left = '0'
+  offscreenContainer.style.top = '0'
+  offscreenContainer.style.zIndex = '-9999'
+  offscreenContainer.style.opacity = '0'
   offscreenContainer.style.pointerEvents = 'none'
   document.body.appendChild(offscreenContainer)
 
@@ -76,14 +96,31 @@ async function captureHighResMapCanvas(
 
   try {
     const style = liveMap.getStyle()
-    // Retain runtime GeoJSON data across sources
+    // Retain runtime GeoJSON data and raster tiles across sources
     if (style && style.sources) {
       for (const sourceId in style.sources) {
         const src = style.sources[sourceId]
         if (src && src.type === 'geojson') {
           const liveSource = liveMap.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
-          if (liveSource && (liveSource as any)._data) {
-            src.data = (liveSource as any)._data
+          if (liveSource) {
+            const rawData = (liveSource as any)._data
+            // MapLibre 5.x wraps data inside { geojson: FeatureCollection }
+            if (rawData && rawData.geojson) {
+              src.data = rawData.geojson
+            } else if (rawData) {
+              src.data = rawData
+            } else if ((liveSource as any)._options?.data) {
+              src.data = (liveSource as any)._options.data
+            }
+          }
+        } else if (src && src.type === 'raster') {
+          const liveSource = liveMap.getSource(sourceId) as maplibregl.RasterTileSource | undefined
+          if (liveSource) {
+            const liveTiles = (liveSource as any).tiles || (liveSource as any)._options?.tiles
+            if (liveTiles && Array.isArray(liveTiles) && liveTiles.length > 0) {
+              src.tiles = [...liveTiles]
+            }
+            src.tileSize = (liveSource as any).tileSize || (liveSource as any)._options?.tileSize || 512
           }
         }
       }
@@ -107,16 +144,22 @@ async function captureHighResMapCanvas(
     } as any)
 
     // Wait for map to be idle with a safety timeout
+    let isTimedOut = false
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
+        isTimedOut = true
         resolve()
-      }, 5000)
+      }, 6000)
 
       offscreenMap!.once('idle', () => {
         clearTimeout(timeout)
         resolve()
       })
     })
+
+    if (isTimedOut) {
+      throw new Error('Offscreen map timed out waiting for tiles')
+    }
 
     const offscreenCanvas = offscreenMap.getCanvas()
     const output = document.createElement('canvas')
@@ -386,46 +429,159 @@ export async function executePrint(
   }
 
   // 6. Optional Legend Card (Bottom-Left inside map frame)
-  if (config.showLegend && config.legendItems && config.legendItems.length > 0) {
-    const items = config.legendItems.slice(0, 8)
-    const cardPad = Math.round(8 * scaleRatio)
-    const rowH = Math.round(15 * scaleRatio)
-    const cardW = Math.round(170 * scaleRatio)
-    const cardH = cardPad * 2 + Math.round(14 * scaleRatio) + items.length * rowH
-    const cardX = marginPx + Math.round(12 * scaleRatio)
-    const cardY = mapY + mapHeightPx - cardH - Math.round(12 * scaleRatio)
+  if (config.showLegend) {
+    let groups: PrintLegendGroup[] = []
+    if (config.legendGroups && config.legendGroups.length > 0) {
+      groups = config.legendGroups.filter((g) => g.items && g.items.length > 0)
+    } else if (config.legendItems && config.legendItems.length > 0) {
+      groups = [{ layerId: 'default', title: 'Planning Symbology', items: config.legendItems }]
+    }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)'
-    ctx.fillRect(cardX, cardY, cardW, cardH)
-    ctx.strokeStyle = '#cbd5e1'
-    ctx.lineWidth = 1
-    ctx.strokeRect(cardX, cardY, cardW, cardH)
+    if (groups.length > 0) {
+      const MAX_ITEMS = 14
+      interface FlattenedLegendItem {
+        item: PrintLegendItem
+        groupTitle?: string
+      }
+      const flattened: FlattenedLegendItem[] = []
+      let totalAvailable = 0
 
-    // Legend Title
-    ctx.fillStyle = '#0f172a'
-    ctx.font = `bold ${Math.round(9 * scaleRatio)}px -apple-system, sans-serif`
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'alphabetic'
-    ctx.fillText('PLANNING SYMBOLOGY', cardX + cardPad, cardY + cardPad + Math.round(9 * scaleRatio))
-
-    // Items
-    items.forEach((item, idx) => {
-      const iy = cardY + cardPad + Math.round(16 * scaleRatio) + idx * rowH
-      const swatchSize = Math.round(10 * scaleRatio)
-
-      ctx.fillStyle = item.color
-      ctx.fillRect(cardX + cardPad, iy, swatchSize, swatchSize)
-      if (item.border) {
-        ctx.strokeStyle = item.border
-        ctx.lineWidth = 1
-        ctx.strokeRect(cardX + cardPad, iy, swatchSize, swatchSize)
+      for (const g of groups) {
+        totalAvailable += g.items.length
+        for (let i = 0; i < g.items.length; i++) {
+          if (flattened.length < MAX_ITEMS) {
+            flattened.push({
+              item: g.items[i],
+              groupTitle: i === 0 && groups.length > 1 ? g.title : undefined
+            })
+          }
+        }
       }
 
-      ctx.fillStyle = '#334155'
-      ctx.font = `${Math.round(8.5 * scaleRatio)}px -apple-system, sans-serif`
+      const hasOverflow = totalAvailable > MAX_ITEMS
+      const isMultiCol = flattened.length > 5
+      const numCols = isMultiCol ? 2 : 1
+      const colW = Math.round(155 * scaleRatio)
+      const colGap = Math.round(10 * scaleRatio)
+      const cardPad = Math.round(9 * scaleRatio)
+      const cardW = isMultiCol ? colW * 2 + colGap + cardPad * 2 : colW + cardPad * 2
+
+      const headerH = Math.round(18 * scaleRatio)
+      const rowH = Math.round(15 * scaleRatio)
+      const groupHeaderExtra = Math.round(12 * scaleRatio)
+
+      const itemsPerCol = Math.ceil(flattened.length / numCols)
+      const extraRows = flattened.filter((f) => f.groupTitle).length > 0 ? 1 : 0
+      const overflowH = hasOverflow ? Math.round(13 * scaleRatio) : 0
+
+      const cardH =
+        cardPad * 2 + headerH + itemsPerCol * rowH + extraRows * groupHeaderExtra + overflowH
+      const cardX = marginPx + Math.round(12 * scaleRatio)
+      const cardY = mapY + mapHeightPx - cardH - Math.round(12 * scaleRatio)
+
+      // Background Card
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+      ctx.fillRect(cardX, cardY, cardW, cardH)
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.lineWidth = 1
+      ctx.strokeRect(cardX, cardY, cardW, cardH)
+
+      // Legend Header
+      ctx.fillStyle = '#0f172a'
+      ctx.font = `bold ${Math.round(9 * scaleRatio)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+      ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      ctx.fillText(item.label, cardX + cardPad + swatchSize + Math.round(6 * scaleRatio), iy + swatchSize / 2)
-    })
+      ctx.fillText('MAP SYMBOLOGY', cardX + cardPad, cardY + cardPad + headerH / 2)
+
+      // Dynamic Filter Badge
+      if (config.dynamicLegend) {
+        const badgeText = 'IN VIEW'
+        ctx.font = `bold ${Math.round(6.5 * scaleRatio)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+        const textW = ctx.measureText(badgeText).width
+        const bw = textW + Math.round(8 * scaleRatio)
+        const bh = Math.round(12 * scaleRatio)
+        const bx = cardX + cardPad + Math.round(90 * scaleRatio)
+        const by = cardY + cardPad + Math.round((headerH - bh) / 2)
+
+        ctx.fillStyle = '#f1f5f9'
+        ctx.fillRect(bx, by, bw, bh)
+        ctx.strokeStyle = '#94a3b8'
+        ctx.lineWidth = 1
+        ctx.strokeRect(bx, by, bw, bh)
+
+        ctx.fillStyle = '#475569'
+        ctx.textAlign = 'center'
+        ctx.fillText(badgeText, bx + bw / 2, by + bh / 2 + 0.5)
+      }
+
+      // Swatches
+      const swatchSize = Math.round(10 * scaleRatio)
+      const contentStartY = cardY + cardPad + headerH
+
+      flattened.forEach((entry, idx) => {
+        const colIdx = isMultiCol ? Math.floor(idx / itemsPerCol) : 0
+        const rowIdx = isMultiCol ? idx % itemsPerCol : idx
+        const itemX = cardX + cardPad + colIdx * (colW + colGap)
+        const itemY = contentStartY + rowIdx * rowH + Math.round(2 * scaleRatio)
+
+        // Swatch Fill
+        ctx.fillStyle = entry.item.color || '#3b82f6'
+        ctx.fillRect(itemX, itemY, swatchSize, swatchSize)
+
+        // Swatch Pattern (Diagonal hatch for overlays)
+        if (entry.item.pattern === 'diagonal') {
+          ctx.save()
+          ctx.beginPath()
+          ctx.rect(itemX, itemY, swatchSize, swatchSize)
+          ctx.clip()
+          ctx.strokeStyle = entry.item.border || entry.item.stroke || 'rgba(0, 0, 0, 0.45)'
+          ctx.lineWidth = Math.max(1, Math.round(1 * scaleRatio))
+          const step = Math.round(3.5 * scaleRatio)
+          for (let p = -swatchSize; p < swatchSize * 2; p += step) {
+            ctx.beginPath()
+            ctx.moveTo(itemX + p, itemY + swatchSize)
+            ctx.lineTo(itemX + p + swatchSize, itemY)
+            ctx.stroke()
+          }
+          ctx.restore()
+        }
+
+        // Swatch Border
+        ctx.strokeStyle = entry.item.border || entry.item.stroke || '#94a3b8'
+        ctx.lineWidth = 1
+        ctx.strokeRect(itemX, itemY, swatchSize, swatchSize)
+
+        // Label
+        ctx.fillStyle = '#1e293b'
+        ctx.font = `${Math.round(8 * scaleRatio)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+
+        const labelX = itemX + swatchSize + Math.round(6 * scaleRatio)
+        const maxLabelW = colW - swatchSize - Math.round(10 * scaleRatio)
+        let displayLabel = entry.item.label
+        if (ctx.measureText(displayLabel).width > maxLabelW) {
+          while (displayLabel.length > 4 && ctx.measureText(displayLabel + '…').width > maxLabelW) {
+            displayLabel = displayLabel.slice(0, -1)
+          }
+          displayLabel += '…'
+        }
+        ctx.fillText(displayLabel, labelX, itemY + swatchSize / 2)
+      })
+
+      // Overflow indicator
+      if (hasOverflow) {
+        ctx.fillStyle = '#64748b'
+        ctx.font = `italic ${Math.round(7.5 * scaleRatio)}px -apple-system, sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(
+          `+${totalAvailable - MAX_ITEMS} more in view`,
+          cardX + cardPad,
+          cardY + cardH - overflowH / 2
+        )
+      }
+    }
   }
 
   // 7. Footer Bar Background & Text

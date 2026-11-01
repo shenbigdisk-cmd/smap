@@ -5,7 +5,7 @@
     getPrintDimensions,
     type PrintConfig
   } from '../utils/printMap'
-  import { PLANNING_ZONES } from '../data/sampleData'
+  import { legendService } from '../services/legendService'
 
   let title = $state(
     mapStore.selectedParcel
@@ -22,6 +22,17 @@
     getPrintDimensions(ps.paperSize, ps.orientation, ps.dpi)
   )
 
+  let activeLegendGroups = $derived.by(() => {
+    const _v = mapStore.viewportVersion
+    if (!mapStore.map || !ps.showLegend) return []
+    const useDynamic = ps.dynamicLegend ?? true
+    return legendService.getAllActiveLegendGroups(mapStore.layers, mapStore.map, !useDynamic)
+  })
+
+  let visibleLegendCount = $derived(
+    activeLegendGroups.reduce((sum, g) => sum + g.items.length, 0)
+  )
+
   function onSettingChange() {
     mapStore.savePrintSettings()
   }
@@ -32,14 +43,6 @@
     statusMessage = 'Rendering map layout...'
 
     try {
-      const legendItems = ps.showLegend
-        ? Object.values(PLANNING_ZONES).map((z) => ({
-            label: `${z.code} - ${z.name}`,
-            color: z.fillColor,
-            border: z.strokeColor
-          }))
-        : undefined
-
       const padLeft = mapStore.sidebarOpen
         ? (mapStore.settings.layout === 'site'
             ? 390
@@ -47,6 +50,25 @@
               ? 380
               : 0)
         : 0
+
+      const useDynamic = ps.dynamicLegend ?? true
+      const container = mapStore.map.getContainer()
+      const viewportBox =
+        padLeft > 0
+          ? ([[padLeft, 0], [container.clientWidth, container.clientHeight]] as [
+              [number, number],
+              [number, number]
+            ])
+          : undefined
+
+      const legendGroups = ps.showLegend
+        ? legendService.getAllActiveLegendGroups(
+            mapStore.layers,
+            mapStore.map,
+            !useDynamic,
+            viewportBox
+          )
+        : undefined
 
       const config: PrintConfig = {
         title,
@@ -58,7 +80,8 @@
         showNorthArrow: ps.showNorthArrow,
         showCoordinates: ps.showCoordinates,
         showLegend: ps.showLegend,
-        legendItems,
+        dynamicLegend: useDynamic,
+        legendGroups,
         padLeft
       }
 
@@ -154,8 +177,20 @@
 
     <label class="check-item">
       <input type="checkbox" bind:checked={ps.showLegend} onchange={onSettingChange} />
-      <span>Include planning symbology legend</span>
+      <span>Include map symbology legend</span>
     </label>
+
+    {#if ps.showLegend}
+      <label class="check-item sub-item">
+        <input type="checkbox" bind:checked={ps.dynamicLegend} onchange={onSettingChange} />
+        <span class="sub-label">
+          Dynamic legend (in-view features only)
+          {#if visibleLegendCount > 0}
+            <span class="count-pill">{visibleLegendCount} in view</span>
+          {/if}
+        </span>
+      </label>
+    {/if}
 
     <label class="check-item">
       <input type="checkbox" bind:checked={ps.showPrintFrame} onchange={onSettingChange} />
@@ -283,6 +318,27 @@
     color: var(--text-main);
     cursor: pointer;
     user-select: none;
+  }
+
+  .check-item.sub-item {
+    padding-left: 20px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .sub-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .count-pill {
+    padding: 1px 5px;
+    border-radius: 9999px;
+    background-color: var(--accent-subtle);
+    color: var(--accent-primary);
+    font-size: 9.5px;
+    font-weight: 700;
   }
 
   .check-item input[type='checkbox'] {

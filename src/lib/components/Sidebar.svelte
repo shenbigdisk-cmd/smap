@@ -35,29 +35,67 @@
     TOOLBOX_TAB
   ])
 
-  // In the sidebar tab bar, up to 4 tabs fit directly side-by-side without crowding.
-  // When there are more than 4 tabs (not enough space), we show 3 direct tabs
-  // and move the remaining tabs (including Toolbox) into the 'More' dropdown.
-  const MAX_FIT_TABS = 4
-  const DIRECT_SLOTS_WHEN_OVERFLOW = 3
+  // In the sidebar tab bar, up to 4 direct tabs fit side-by-side with compact padding.
+  // When there are more tabs, we show direct tabs + the active tab (if in overflow) + More dropdown.
+  const MAX_DIRECT_TABS = 4
 
-  let visibleTabs = $derived(
-    allTabs.length <= MAX_FIT_TABS
-      ? allTabs
-      : allTabs.slice(0, DIRECT_SLOTS_WHEN_OVERFLOW)
-  )
+  let computedTabs = $derived.by(() => {
+    if (allTabs.length <= MAX_DIRECT_TABS) {
+      return {
+        visible: allTabs,
+        overflow: [] as TabItem[]
+      }
+    }
 
-  let overflowTabs = $derived(
-    allTabs.length <= MAX_FIT_TABS
-      ? []
-      : allTabs.slice(DIRECT_SLOTS_WHEN_OVERFLOW)
-  )
+    const activeIndex = allTabs.findIndex((t) => t.id === mapStore.activeTab)
+    const directSlotCount = MAX_DIRECT_TABS - 1 // Reserve slots for direct tabs
 
-  let activeOverflow = $derived(
-    overflowTabs.find((m) => m.id === mapStore.activeTab)
-  )
+    if (activeIndex >= directSlotCount) {
+      // Active tab is outside direct slots: elevate to the visible row so the active tab
+      // is always physically connected and visible with zero seam.
+      const activeTabItem = allTabs[activeIndex]
+      const directSlots = allTabs.slice(0, directSlotCount)
+      const visible = [...directSlots, activeTabItem]
+      const overflow = allTabs.filter((t) => !visible.some((v) => v.id === t.id))
+      return { visible, overflow }
+    } else {
+      const visible = allTabs.slice(0, MAX_DIRECT_TABS)
+      const overflow = allTabs.slice(MAX_DIRECT_TABS)
+      return { visible, overflow }
+    }
+  })
+
+  let visibleTabs = $derived(computedTabs.visible)
+  let overflowTabs = $derived(computedTabs.overflow)
 
   let moreDropdownOpen = $state(false)
+  let moreContainerEl = $state<HTMLElement | null>(null)
+
+  function toggleMoreDropdown(e: MouseEvent) {
+    e.stopPropagation()
+    moreDropdownOpen = !moreDropdownOpen
+  }
+
+  function selectOverflowTab(id: string) {
+    moreDropdownOpen = false
+    mapStore.setActiveTab(id as any)
+  }
+
+  $effect(() => {
+    if (!moreDropdownOpen) return
+
+    function onPointerDownCapture(e: PointerEvent) {
+      const target = e.target as Node | null
+      if (moreContainerEl && target && !moreContainerEl.contains(target)) {
+        moreDropdownOpen = false
+      }
+    }
+
+    window.addEventListener('pointerdown', onPointerDownCapture, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDownCapture, true)
+    }
+  })
 
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && moreDropdownOpen) {
@@ -96,37 +134,25 @@
 
     <!-- Overflow 'More' Dropdown for extra pinned modules -->
     {#if overflowTabs.length > 0}
-      <div class="more-tab-container">
+      <div class="more-tab-container" bind:this={moreContainerEl}>
         <button
           type="button"
-          class="tab-btn more-tab-btn"
-          class:active={!!activeOverflow}
-          onclick={() => (moreDropdownOpen = !moreDropdownOpen)}
+          class="more-tab-btn"
+          class:open={moreDropdownOpen}
+          onclick={toggleMoreDropdown}
           aria-haspopup="menu"
           aria-expanded={moreDropdownOpen}
-          title={activeOverflow ? `Active: ${activeOverflow.name}. Click to switch tabs.` : 'More pinned modules'}
+          title="More tabs ({overflowTabs.length})"
+          aria-label="More tabs ({overflowTabs.length})"
         >
-          {#if activeOverflow}
-            <span class="tab-icon">
-              <ModuleIcon id={activeOverflow.id} size={14} />
-            </span>
-            <span class="tab-label">{activeOverflow.shortTitle}</span>
-          {:else}
-            <span class="tab-label">More</span>
-            <span class="overflow-badge">+{overflowTabs.length}</span>
-          {/if}
+          <span class="more-label">More</span>
+          <span class="overflow-badge">+{overflowTabs.length}</span>
           <svg class="chevron-icon" class:open={moreDropdownOpen} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
 
         {#if moreDropdownOpen}
-          <div
-            class="dropdown-backdrop"
-            onclick={() => (moreDropdownOpen = false)}
-            tabindex="-1"
-            role="presentation"
-          ></div>
           <div class="more-dropdown-menu" role="menu">
             <div class="dropdown-header">
               <span>MORE TABS</span>
@@ -138,10 +164,7 @@
                   type="button"
                   class="dropdown-item"
                   class:active={mapStore.activeTab === mod.id}
-                  onclick={() => {
-                    mapStore.setActiveTab(mod.id)
-                    moreDropdownOpen = false
-                  }}
+                  onclick={() => selectOverflowTab(mod.id)}
                   role="menuitem"
                 >
                   <span class="item-icon">
@@ -151,6 +174,9 @@
                     <span class="item-title">{mod.name}</span>
                     <span class="item-category">{mod.shortTitle} • {mod.category || 'Tools'}</span>
                   </div>
+                  {#if mod.id === 'results' && mapStore.hasFeatureResults}
+                    <span class="item-dot"></span>
+                  {/if}
                   {#if mapStore.activeTab === mod.id}
                     <svg class="item-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                       <polyline points="20 6 9 17 4 12"></polyline>
@@ -216,8 +242,8 @@
     align-items: flex-end;
     background-color: var(--bg-card-subtle);
     border-bottom: 1px solid var(--border-color);
-    padding: 6px 8px 0 8px;
-    gap: 3px;
+    padding: 6px 4px 0 4px;
+    gap: 2px;
     height: 42px;
     box-sizing: border-box;
     position: relative;
@@ -234,13 +260,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    padding: 0 8px;
+    gap: 3px;
+    padding: 0 4px;
     background: transparent;
     border: 1px solid transparent;
     border-bottom: 1px solid var(--border-color);
     border-radius: 6px 6px 0 0;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
@@ -280,12 +306,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 11px;
+    letter-spacing: -0.01em;
   }
 
   .active-dot {
     position: absolute;
     top: 5px;
-    right: 5px;
+    right: 3px;
     width: 5px;
     height: 5px;
     background-color: var(--accent-primary);
@@ -294,26 +322,43 @@
 
   .more-tab-container {
     position: relative;
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
     display: flex;
     align-items: flex-end;
   }
 
   .more-tab-btn {
-    width: 100%;
-    gap: 4px;
+    height: 35px;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 6px 6px 0 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s ease, background-color 0.15s ease;
+    white-space: nowrap;
+    z-index: 1;
   }
 
-  .more-tab-btn.active {
-    color: var(--accent-primary);
-    background-color: var(--bg-panel);
-    font-weight: 600;
-    border: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--bg-panel);
-    border-radius: 6px 6px 0 0;
-    box-shadow: none;
-    z-index: 2;
+  .more-tab-btn:hover,
+  .more-tab-btn.open {
+    color: var(--text-main);
+    background-color: var(--bg-subtle);
+    border-color: var(--border-subtle) var(--border-subtle) var(--border-color) var(--border-subtle);
+  }
+
+  .more-label {
+    font-size: 11px;
+    font-weight: 500;
   }
 
   .overflow-badge {
@@ -321,8 +366,9 @@
     font-weight: 700;
     padding: 1px 4px;
     background-color: var(--bg-subtle);
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--text-muted);
+    line-height: 1;
   }
 
   .chevron-icon {
@@ -334,24 +380,17 @@
     transform: rotate(180deg);
   }
 
-  .dropdown-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 99;
-  }
-
   .more-dropdown-menu {
     position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 230px;
+    top: calc(100% + 4px);
+    right: 0;
+    left: auto;
+    min-width: 210px;
+    max-width: 260px;
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.08);
     z-index: 100;
     overflow: hidden;
     animation: fadeInMenu 0.15s ease;
@@ -395,9 +434,9 @@
   .dropdown-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
-    padding: 8px 10px;
+    padding: 7px 9px;
     border: none;
     border-radius: 6px;
     background: transparent;
@@ -405,6 +444,7 @@
     text-align: left;
     transition: background-color 0.12s ease;
     color: var(--text-main);
+    box-sizing: border-box;
   }
 
   .dropdown-item:hover {
@@ -435,7 +475,7 @@
   }
 
   .item-title {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
@@ -443,21 +483,31 @@
   }
 
   .item-category {
-    font-size: 10px;
+    font-size: 9.5px;
     color: var(--text-muted);
+  }
+
+  .item-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .item-check {
     color: var(--accent-primary);
     flex-shrink: 0;
+    margin-left: auto;
   }
 
   .sidebar-close-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border-radius: 5px;
     background: transparent;
     border: none;

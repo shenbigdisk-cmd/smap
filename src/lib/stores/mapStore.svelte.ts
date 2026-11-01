@@ -12,6 +12,7 @@ import {
   ZONE_POLYGONS_GEOJSON
 } from '../data/sampleData'
 import { dataAdapterRegistry } from '../services/adapters/DataAdapterRegistry'
+import { legendService } from '../services/legendService'
 import { localDbGet, localDbSet } from '../services/localDb'
 import { persistenceEngine } from '../services/persistence'
 import type {
@@ -57,7 +58,8 @@ const DEFAULT_PRINT_SETTINGS: UserPrintSettings = {
   showScale: true,
   showNorthArrow: true,
   showCoordinates: true,
-  showLegend: false,
+  showLegend: true,
+  dynamicLegend: true,
   showPrintFrame: true
 }
 
@@ -126,6 +128,10 @@ class MapStore {
     if (!this.cursorCoordinates) return ''
     return formatCoordinates(this.cursorCoordinates[0], this.cursorCoordinates[1]).pillText
   }
+
+  // Dynamic Viewport & Legend Tracking
+  viewportVersion = $state(0)
+  dynamicLegendEnabled = $state(true)
 
   // Buffer State (for selected parcel)
   bufferState = $state<BufferState>({
@@ -587,12 +593,18 @@ class MapStore {
         ? `VicPlan - ${this.selectedParcel.address}`
         : 'VicPlan Statewide Planning Scheme Map'
 
-      const legendItems = this.printSettings.showLegend
-        ? Object.values(PLANNING_ZONES).map((z) => ({
-            label: `${z.code} - ${z.name}`,
-            color: z.fillColor,
-            border: z.strokeColor
-          }))
+      const useDynamic = this.printSettings.dynamicLegend ?? true
+      const container = this.map.getContainer()
+      const viewportBox =
+        padLeft > 0
+          ? ([[padLeft, 0], [container.clientWidth, container.clientHeight]] as [
+              [number, number],
+              [number, number]
+            ])
+          : undefined
+
+      const legendGroups = this.printSettings.showLegend
+        ? legendService.getAllActiveLegendGroups(this.layers, this.map, !useDynamic, viewportBox)
         : undefined
 
       const config: PrintConfig = {
@@ -605,7 +617,8 @@ class MapStore {
         showNorthArrow: this.printSettings.showNorthArrow,
         showCoordinates: this.printSettings.showCoordinates,
         showLegend: this.printSettings.showLegend,
-        legendItems,
+        dynamicLegend: useDynamic,
+        legendGroups,
         padLeft
       }
 
@@ -1549,20 +1562,58 @@ class MapStore {
       return
     }
 
-    const promises = visibleIdentifyLayers.map(async (layer) => {
-      try {
-        const adapterName =
-          layer.data?.adapter ||
-          (layer.feature_service?.type === 'esri_rest' || layer.format === 'esri-feature'
-            ? 'esri-rest'
-            : 'geojson-client')
-        const adapter = dataAdapterRegistry.getAdapter(adapterName)
-        return await adapter.identify(layer, coordinate, point, this.map)
-      } catch (err) {
-        console.warn(`Identify error for layer ${layer.id}:`, err)
-        return []
+    // Separate layers: Esri REST layers can be batched by service / MapServer
+    const esriLayers: OperationalLayer[] = []
+    const otherLayers: OperationalLayer[] = []
+
+    for (const layer of visibleIdentifyLayers) {
+      const adapterName =
+        layer.data?.adapter ||
+        (layer.feature_service?.type === 'esri_rest' || layer.format === 'esri-feature'
+          ? 'esri-rest'
+          : 'geojson-client')
+      if (adapterName === 'esri-rest') {
+        esriLayers.push(layer)
+      } else {
+        otherLayers.push(layer)
       }
-    })
+    }
+
+    const promises: Promise<QueryResultFeature[]>[] = []
+
+    // 1. Batch Esri layers through EsriRestAdapter.identifyBatch (merges by MapServer into 1 call)
+    if (esriLayers.length > 0) {
+      const esriAdapter = dataAdapterRegistry.getAdapter('esri-rest')
+      if (esriAdapter.identifyBatch) {
+        promises.push(
+          esriAdapter.identifyBatch(esriLayers, coordinate, point, this.map).catch((err) => {
+            console.warn('Batched Esri identify error:', err)
+            return []
+          })
+        )
+      } else {
+        for (const layer of esriLayers) {
+          promises.push(
+            esriAdapter.identify(layer, coordinate, point, this.map).catch((err) => {
+              console.warn(`Identify error for layer ${layer.id}:`, err)
+              return []
+            })
+          )
+        }
+      }
+    }
+
+    // 2. Query other layers individually via their respective adapters
+    for (const layer of otherLayers) {
+      const adapterName = layer.data?.adapter || 'geojson-client'
+      const adapter = dataAdapterRegistry.getAdapter(adapterName)
+      promises.push(
+        adapter.identify(layer, coordinate, point, this.map).catch((err) => {
+          console.warn(`Identify error for layer ${layer.id}:`, err)
+          return []
+        })
+      )
+    }
 
     const results = (await Promise.all(promises)).flat()
 
@@ -1616,6 +1667,18 @@ class MapStore {
     }
   }
 
+  private syncDynamicServiceLayersCallback: (() => void) | null = null
+
+  setSyncServiceLayersCallback(cb: () => void) {
+    this.syncDynamicServiceLayersCallback = cb
+  }
+
+  syncDynamicServiceLayers() {
+    if (this.syncDynamicServiceLayersCallback) {
+      this.syncDynamicServiceLayersCallback()
+    }
+  }
+
   updateMapLayerVisibility(layer: OperationalLayer) {
     if (!this.map) return
     const isVisible = layer.enabled !== false && layer.visible
@@ -1633,6 +1696,11 @@ class MapStore {
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'visibility', visibility)
       }
+    }
+
+    // Dynamic Esri MapServer layers are merged at service level; trigger dynamic sync
+    if (layer.render?.type === 'esri_export' || layer.format === 'esri-feature') {
+      this.syncDynamicServiceLayers()
     }
   }
 
@@ -1656,6 +1724,11 @@ class MapStore {
           this.map.setPaintProperty(id, 'fill-extrusion-opacity', layer.opacity)
         }
       }
+    }
+
+    // Dynamic Esri MapServer layers are merged at service level; trigger dynamic sync
+    if (layer.render?.type === 'esri_export' || layer.format === 'esri-feature') {
+      this.syncDynamicServiceLayers()
     }
   }
 

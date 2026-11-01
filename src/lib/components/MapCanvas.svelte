@@ -108,6 +108,7 @@
     map.on('load', () => {
       if (!map) return
       mapStore.setMap(map)
+      mapStore.setSyncServiceLayersCallback(() => setupServiceLayers())
       reapplyAllLayers()
       initOrReinitTerraDraw()
       initUrlStateSync()
@@ -129,6 +130,11 @@
       if (map && map.getStyle() && !map.getLayer('layer-parcels-fill')) {
         reapplyAllLayers()
       }
+      mapStore.viewportVersion++
+    })
+
+    map.on('moveend', () => {
+      mapStore.viewportVersion++
     })
 
     // Track Cursor Coordinates, Movement & Hover
@@ -597,76 +603,132 @@
         ? 'buffer-fill'
         : undefined
 
+    // 1. Group ArcGIS MapServer Dynamic Export layers by service / MapServer base URL
+    const esriExportGroups = new Map<
+      string,
+      { baseUrl: string; serviceId?: string; layers: (typeof mapStore.layers)[number][] }
+    >()
+    const otherLayers: (typeof mapStore.layers)[number][] = []
+
     for (const layer of mapStore.layers) {
       if (!layer.render) continue
 
-      const sourceId = `src-${layer.id}`
-
-      // 1. ArcGIS MapServer Dynamic Export
       if (layer.render.type === 'esri_export') {
         const rawUrl = layer.render.url || layer.url
         if (!rawUrl) continue
+        const baseUrl = rawUrl.replace(/\/(export|\d+)\/?$/, '').replace(/\/+$/, '')
+        const groupKey = layer.serviceId || baseUrl
 
-        const baseUrl = rawUrl.replace(/\/export\/?$/, '')
-        let sublayerParam = 'show:0'
-        if (layer.render.sublayers && layer.render.sublayers.length > 0) {
-          sublayerParam = `show:${layer.render.sublayers.join(',')}`
-        } else if (layer.render.layers !== undefined) {
-          const lStr = String(layer.render.layers)
-          sublayerParam = lStr.startsWith('show:') ? lStr : `show:${lStr}`
-        } else if (layer.serviceLayerId !== undefined) {
-          sublayerParam = `show:${layer.serviceLayerId}`
+        const existing = esriExportGroups.get(groupKey) || {
+          baseUrl,
+          serviceId: layer.serviceId,
+          layers: []
         }
+        existing.layers.push(layer)
+        esriExportGroups.set(groupKey, existing)
+      } else {
+        otherLayers.push(layer)
+      }
+    }
 
-        const tileUrl = `${baseUrl}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image&layers=${sublayerParam}`
+    // Process merged Esri MapServer dynamic export groups
+    for (const [groupKey, group] of esriExportGroups.entries()) {
+      const sourceId = `src-esri-${groupKey}`
+      const layerId = `layer-esri-${groupKey}`
 
-        if (!map.getSource(sourceId)) {
+      // Clean up legacy unmerged sublayer sources/layers if they exist
+      for (const l of group.layers) {
+        if (map.getLayer(l.id)) map.removeLayer(l.id)
+        if (map.getSource(`src-${l.id}`)) map.removeSource(`src-${l.id}`)
+      }
+
+      // Check which sublayers are currently enabled AND visible
+      const service = group.serviceId ? mapStore.services.find((s) => s.id === group.serviceId) : null
+      const isServiceActive = service ? service.enabled !== false && service.visible !== false : true
+      const visibleLayers = isServiceActive
+        ? group.layers.filter((l) => l.enabled !== false && l.visible)
+        : []
+
+      if (visibleLayers.length > 0) {
+        // Collect and sort unique sublayer IDs
+        const sublayerIds: number[] = visibleLayers
+          .map((l) => {
+            if (l.serviceLayerId !== undefined) return Number(l.serviceLayerId)
+            if (l.render?.sublayers && l.render.sublayers.length > 0) return Number(l.render.sublayers[0])
+            const match = (l.url || '').match(/\/MapServer\/(\d+)/i)
+            return match ? parseInt(match[1], 10) : 0
+          })
+          .filter((id, index, self) => self.indexOf(id) === index)
+          .sort((a, b) => a - b)
+
+        const layersParam = `show:${sublayerIds.join(',')}`
+        // 512x512 tile size for crisp rendering and 4x fewer network requests
+        const tileUrl = `${group.baseUrl}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&dpi=96&format=png32&transparent=true&f=image&layers=${layersParam}`
+
+        const opacity =
+          service?.opacity ?? Math.max(...visibleLayers.map((l) => l.opacity ?? 0.85))
+
+        const existingSource = map.getSource(sourceId) as maplibregl.RasterTileSource | undefined
+        if (!existingSource) {
           map.addSource(sourceId, {
             type: 'raster',
             tiles: [tileUrl],
-            tileSize: 256,
-            minzoom: layer.render.minzoom ?? 0,
-            maxzoom: layer.render.maxzoom ?? 22
+            tileSize: 512,
+            minzoom: 0,
+            maxzoom: 22
           })
+        } else if ((existingSource as any).tiles?.[0] !== tileUrl) {
+          existingSource.setTiles([tileUrl])
         }
 
-        if (!map.getLayer(layer.id)) {
+        if (!map.getLayer(layerId)) {
           map.addLayer(
             {
-              id: layer.id,
+              id: layerId,
               type: 'raster',
               source: sourceId,
               paint: {
-                'raster-opacity': layer.opacity ?? 0.85
+                'raster-opacity': opacity
               },
               layout: {
-                visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+                visibility: 'visible'
               }
             },
             beforeId
           )
+        } else {
+          map.setLayoutProperty(layerId, 'visibility', 'visible')
+          map.setPaintProperty(layerId, 'raster-opacity', opacity)
+        }
+      } else {
+        // No sublayers active in this service - hide the merged layer
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', 'none')
         }
       }
-      // 2. Standard WMS
-      else if (layer.render.type === 'wms') {
-        const rawUrl = layer.render.url || layer.url
-        if (!rawUrl) continue
+    }
 
-        const wmsLayers = layer.render.layers
-          ? Array.isArray(layer.render.layers)
-            ? layer.render.layers.join(',')
-            : layer.render.layers
-          : ''
-        const delim = rawUrl.includes('?') ? '&' : '?'
-        const tileUrl = `${rawUrl}${delim}service=WMS&request=GetMap&layers=${encodeURIComponent(wmsLayers)}&styles=&format=image/png&transparent=true&version=1.3.0&width=256&height=256&crs=EPSG:3857&bbox={bbox-epsg-3857}`
+    // Process non-esri_export layers (esri_tile, wms, wmts, vector_tile)
+    for (const layer of otherLayers) {
+      if (!layer.render) continue
+      const render = layer.render
+      const sourceId = `src-${layer.id}`
+
+      // 2. ArcGIS Cached Tile Service (esri_tile)
+      if (render.type === 'esri_tile') {
+        const rawUrl = render.url || layer.url
+        if (!rawUrl) continue
+        const tileUrl = rawUrl.includes('{z}')
+          ? rawUrl
+          : `${rawUrl.replace(/\/+$/, '')}/tile/{z}/{y}/{x}`
 
         if (!map.getSource(sourceId)) {
           map.addSource(sourceId, {
             type: 'raster',
             tiles: [tileUrl],
-            tileSize: 256,
-            minzoom: layer.render.minzoom ?? 0,
-            maxzoom: layer.render.maxzoom ?? 22
+            tileSize: 512,
+            minzoom: render.minzoom ?? 0,
+            maxzoom: render.maxzoom ?? 22
           })
         }
 
@@ -685,20 +747,74 @@
             },
             beforeId
           )
+        } else {
+          map.setLayoutProperty(
+            layer.id,
+            'visibility',
+            layer.enabled !== false && layer.visible ? 'visible' : 'none'
+          )
+          map.setPaintProperty(layer.id, 'raster-opacity', layer.opacity ?? 0.8)
         }
       }
-      // 3. WMTS or Raster Tile
-      else if (layer.render.type === 'wmts' || layer.render.type === 'raster_tile') {
-        const rawUrl = layer.render.url || layer.url
+      // 3. Standard WMS
+      else if (render.type === 'wms') {
+        const rawUrl = render.url || layer.url
+        if (!rawUrl) continue
+
+        const wmsLayers = render.layers
+          ? Array.isArray(render.layers)
+            ? render.layers.join(',')
+            : render.layers
+          : ''
+        const delim = rawUrl.includes('?') ? '&' : '?'
+        const tileUrl = `${rawUrl}${delim}service=WMS&request=GetMap&layers=${encodeURIComponent(wmsLayers)}&styles=&format=image/png&transparent=true&version=1.3.0&width=512&height=512&crs=EPSG:3857&bbox={bbox-epsg-3857}`
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: 'raster',
+            tiles: [tileUrl],
+            tileSize: 512,
+            minzoom: render.minzoom ?? 0,
+            maxzoom: render.maxzoom ?? 22
+          })
+        }
+
+        if (!map.getLayer(layer.id)) {
+          map.addLayer(
+            {
+              id: layer.id,
+              type: 'raster',
+              source: sourceId,
+              paint: {
+                'raster-opacity': layer.opacity ?? 0.8
+              },
+              layout: {
+                visibility: layer.enabled !== false && layer.visible ? 'visible' : 'none'
+              }
+            },
+            beforeId
+          )
+        } else {
+          map.setLayoutProperty(
+            layer.id,
+            'visibility',
+            layer.enabled !== false && layer.visible ? 'visible' : 'none'
+          )
+          map.setPaintProperty(layer.id, 'raster-opacity', layer.opacity ?? 0.8)
+        }
+      }
+      // 4. WMTS or Raster Tile
+      else if (render.type === 'wmts' || render.type === 'raster_tile') {
+        const rawUrl = render.url || layer.url
         if (!rawUrl) continue
 
         if (!map.getSource(sourceId)) {
           map.addSource(sourceId, {
             type: 'raster',
             tiles: [rawUrl],
-            tileSize: 256,
-            minzoom: layer.render.minzoom ?? 0,
-            maxzoom: layer.render.maxzoom ?? 22
+            tileSize: 512,
+            minzoom: render.minzoom ?? 0,
+            maxzoom: render.maxzoom ?? 22
           })
         }
 
@@ -717,11 +833,18 @@
             },
             beforeId
           )
+        } else {
+          map.setLayoutProperty(
+            layer.id,
+            'visibility',
+            layer.enabled !== false && layer.visible ? 'visible' : 'none'
+          )
+          map.setPaintProperty(layer.id, 'raster-opacity', layer.opacity ?? 0.8)
         }
       }
-      // 4. Vector Tile
-      else if (layer.render.type === 'vector_tile') {
-        const rawUrl = layer.render.url || layer.url
+      // 5. Vector Tile
+      else if (render.type === 'vector_tile') {
+        const rawUrl = render.url || layer.url
         if (!rawUrl) continue
 
         if (!map.getSource(sourceId)) {
@@ -738,7 +861,7 @@
                 id: layer.id,
                 type: 'fill',
                 source: sourceId,
-                'source-layer': layer.render.source_layer || layer.id,
+                'source-layer': render.source_layer || layer.id,
                 paint: {
                   'fill-color': layer.color || '#0284c7',
                   'fill-opacity': (layer.opacity ?? 0.8) * 0.4
@@ -755,7 +878,7 @@
                 id: layer.id,
                 type: 'line',
                 source: sourceId,
-                'source-layer': layer.render.source_layer || layer.id,
+                'source-layer': render.source_layer || layer.id,
                 paint: {
                   'line-color': layer.color || '#0284c7',
                   'line-width': 2,
@@ -1103,9 +1226,10 @@
     }
   }
 
-  // Synchronize dynamic service layers when layers change
+  // Synchronize dynamic service layers when layers or services change
   $effect(() => {
     const layers = mapStore.layers
+    const services = mapStore.services
     if (!map || !map.getStyle()) return
     setupServiceLayers()
     for (const l of layers) {

@@ -142,7 +142,8 @@ export class EsriServiceLoader implements IServiceLoader {
             url: isTileCache ? `${cleanUrl}/tile/{z}/{y}/{x}` : `${cleanUrl}/export`,
             layers: `show:${sublayerId}`,
             format: 'png32',
-            transparent: true
+            transparent: true,
+            tileSize: 512
           },
           feature_service: {
             type: 'esri_rest',
@@ -238,12 +239,14 @@ export class EsriServiceLoader implements IServiceLoader {
       enabled: (raw.enabled !== false) && serviceEnabled,
       opacity: raw.opacity ?? 0.8,
       color,
+      legend: raw.legend,
       render: raw.render || {
         type: 'esri_export',
         url: `${cleanUrl}/export`,
         layers: `show:${sublayerId}`,
         format: 'png32',
-        transparent: true
+        transparent: true,
+        tileSize: 512
       },
       feature_service: raw.feature_service || {
         type: 'esri_rest',
@@ -274,7 +277,8 @@ export class EsriServiceLoader implements IServiceLoader {
           url: `${url}/export`,
           layers: 'show:0',
           format: 'png32',
-          transparent: true
+          transparent: true,
+          tileSize: 512
         },
         feature_service: {
           type: 'esri_rest',
