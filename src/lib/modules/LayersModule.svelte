@@ -6,7 +6,6 @@
 
   let legendExpanded = $state(false)
   let expandedSublayerLegendId = $state<string | null>(null)
-  let expandedServices = $state<Record<string, boolean>>({})
 
   let selectedServiceId = $derived(mapStore.layersConfigServiceId)
   let selectedService = $derived<ServiceDefinition | undefined>(
@@ -22,15 +21,6 @@
       (l) => mapStore.isLayerVisible(l)
     )
   })
-
-  function isServiceExpanded(serviceId: string): boolean {
-    return expandedServices[serviceId] !== false
-  }
-
-  function toggleServiceExpand(serviceId: string) {
-    const current = isServiceExpanded(serviceId)
-    expandedServices[serviceId] = !current
-  }
 
   function toggleSublayerLegend(layerId: string) {
     expandedSublayerLegendId = expandedSublayerLegendId === layerId ? null : layerId
@@ -52,28 +42,32 @@
     <!-- SERVICE CONFIG VIEW (Sublayer Visibility Only)                            -->
     <!-- ========================================================================= -->
     <div class="service-detail-view">
-      <div class="site-detail-nav">
-        <button
-          type="button"
-          class="back-btn"
-          onclick={backToServicesList}
-          title="Return to services list"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          <span>Back to Services</span>
-        </button>
-        {#if mapStore.isServiceLoading(selectedService.id)}
-          <span class="service-loading-spinner" title="Loading {selectedService.name}..." aria-label="Loading service">
-            <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
-              <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
-              <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+      {#if mapStore.settings.layout === 'site'}
+        <!-- Back Navigation for Site layout -->
+        <div class="site-detail-nav">
+          <button
+            type="button"
+            class="back-btn"
+            onclick={backToServicesList}
+            title="Return to services list"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
             </svg>
-          </span>
-        {/if}
-      </div>
+            <span>Back to Services</span>
+          </button>
+          {#if mapStore.isServiceLoading(selectedService.id)}
+            <span class="service-loading-spinner" title="Loading {selectedService.name}..." aria-label="Loading service">
+              <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+                <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+                <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+              </svg>
+            </span>
+          {/if}
+        </div>
+      {/if}
+
 
       {#if selectedService.layers.length > 0}
         <div class="sublayers-list">
@@ -157,134 +151,48 @@
 
   {:else}
     <!-- ========================================================================= -->
-    <!-- MAIN SERVICES & LAYERS LIST (Hierarchical Grouped View)                   -->
+    <!-- MAIN SERVICES LIST (Checkbox, Title, and Hover Config Button)             -->
     <!-- ========================================================================= -->
     <div class="services-list-container">
       {#each mapStore.services as service (service.id)}
-        {@const isExpanded = isServiceExpanded(service.id)}
-        <div class="service-group" class:disabled={!service.visible}>
-          <div class="service-item">
-            {#if service.layers.length > 0}
-              <button
-                type="button"
-                class="service-expand-btn"
-                class:expanded={isExpanded}
-                onclick={() => toggleServiceExpand(service.id)}
-                title={isExpanded ? 'Collapse layers' : 'Expand layers'}
-                aria-label={isExpanded ? 'Collapse layers' : 'Expand layers'}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </button>
-            {:else}
-              <span class="service-expand-spacer"></span>
-            {/if}
+        <div class="service-item" class:disabled={!service.visible}>
+          <label class="service-toggle">
+            <input
+              type="checkbox"
+              checked={service.visible}
+              onchange={() => mapStore.toggleService(service.id)}
+            />
+            <span class="service-name" title={service.name}>{service.name}</span>
+          </label>
 
-            <label class="service-toggle">
-              <input
-                type="checkbox"
-                checked={service.visible}
-                onchange={() => mapStore.toggleService(service.id)}
-              />
-              <span class="service-name" title={service.name}>{service.name}</span>
-            </label>
+          {#if mapStore.isServiceLoading(service.id)}
+            <span class="service-loading-spinner" title="Loading {service.name}..." aria-label="Loading service">
+              <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+                <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+                <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+              </svg>
+            </span>
+          {/if}
 
-            {#if mapStore.isServiceLoading(service.id)}
-              <span class="service-loading-spinner" title="Loading {service.name}..." aria-label="Loading service">
-                <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
-                  <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
-                  <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
-                </svg>
-              </span>
-            {/if}
+          {#if service.status === 'error'}
+            <span class="service-status-pill error" title={service.error || 'Connection error'}>
+              Error
+            </span>
+          {/if}
 
-            {#if service.status === 'error'}
-              <span class="service-status-pill error" title={service.error || 'Connection error'}>
-                Error
-              </span>
-            {/if}
-          </div>
-
-          <!-- Inline Sublayers List -->
-          {#if isExpanded && service.layers.length > 0}
-            <div class="service-sublayers-inline">
-              {#each service.layers as layer (layer.id)}
-                {@const layerLegend = legendService.getLayerLegendGroup(layer, mapStore.map)}
-                <div class="sublayer-item-wrapper">
-                  <div class="sublayer-item" class:disabled={!layer.visible || !service.visible}>
-                    <label class="sublayer-toggle">
-                      <input
-                        type="checkbox"
-                        checked={layer.visible}
-                        disabled={!service.visible}
-                        onchange={() => mapStore.toggleLayer(layer.id)}
-                      />
-                      {#if layer.legend?.items?.[0]?.image}
-                        <img class="sublayer-swatch-img" src={layer.legend.items[0].image} alt="" />
-                      {:else if layer.color}
-                        <span class="sublayer-swatch-dot" style="background-color: {layer.color};"></span>
-                      {/if}
-                      <span class="sublayer-name" title={layer.title}>{layer.title}</span>
-                    </label>
-
-                    {#if mapStore.isLayerLoading(layer.id)}
-                      <span class="service-loading-spinner" title="Loading {layer.title}..." aria-label="Loading layer">
-                        <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
-                          <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
-                          <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
-                        </svg>
-                      </span>
-                    {/if}
-
-                    <div class="sublayer-actions">
-                      {#if layerLegend && layerLegend.items.length > 0}
-                        <button
-                          type="button"
-                          class="sublayer-legend-btn"
-                          class:active={expandedSublayerLegendId === layer.id}
-                          onclick={() => toggleSublayerLegend(layer.id)}
-                          title="Toggle layer legend"
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="14" width="7" height="7"></rect>
-                            <rect x="3" y="14" width="7" height="7"></rect>
-                          </svg>
-                        </button>
-                      {/if}
-                    </div>
-                  </div>
-
-                  {#if expandedSublayerLegendId === layer.id && layerLegend}
-                    <div class="sublayer-inline-legend">
-                      <div class="swatches-grid">
-                        {#each layerLegend.items as item}
-                          <div class="legend-swatch-item">
-                            {#if item.image}
-                              <img class="swatch-img" src={item.image} alt={item.label} />
-                            {:else}
-                              <div
-                                class="swatch-color"
-                                class:pattern={item.pattern === 'diagonal'}
-                                style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
-                              ></div>
-                            {/if}
-                            <div class="swatch-info">
-                              {#if item.code && item.code !== item.label}
-                                <span class="swatch-code">{item.code}</span>
-                              {/if}
-                              <span class="swatch-name" title={item.label}>{item.label}</span>
-                            </div>
-                          </div>
-                        {/each}
-                      </div>
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
+          {#if service.layers.length > 1}
+            <button
+              type="button"
+              class="config-btn"
+              onclick={() => openServiceConfig(service.id)}
+              title="Configure sub-layers"
+              aria-label="Configure sub-layers"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
           {/if}
         </div>
       {/each}
@@ -390,35 +298,31 @@
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-height: 0;
+    min-height: 100%;
+    height: 100%;
     gap: 10px;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   /* Operational Services List: Clean flat rows (no card/box wrappers) */
   .services-list-container {
-    flex: 1;
+    flex: 1 1 0;
     min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     padding-right: 2px;
-    gap: 3px;
-  }
-
-  .service-group {
-    display: flex;
-    flex-direction: column;
-    border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 2px;
   }
 
   .service-item {
     display: flex;
     align-items: center;
-    padding: 6px 4px;
+    justify-content: space-between;
+    padding: 7px 8px;
     min-height: 32px;
-    gap: 6px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-subtle);
     border-radius: 4px;
     transition: background-color 0.12s ease;
   }
@@ -427,49 +331,8 @@
     background-color: var(--bg-subtle);
   }
 
-  .service-expand-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: 4px;
-    transition: transform 0.18s ease, color 0.12s ease, background-color 0.12s ease;
-    flex-shrink: 0;
-    padding: 0;
-  }
-
-  .service-expand-btn:hover {
-    color: var(--text-main);
-    background-color: var(--bg-card-subtle);
-  }
-
-  .service-expand-btn.expanded svg {
-    transform: rotate(0deg);
-  }
-
-  .service-expand-btn:not(.expanded) svg {
-    transform: rotate(-90deg);
-  }
-
-  .service-expand-spacer {
-    width: 22px;
-    flex-shrink: 0;
-  }
-
-  .service-sublayers-inline {
-    display: flex;
-    flex-direction: column;
-    padding-left: 14px;
-    border-left: 2px solid var(--border-subtle);
-    margin-left: 11px;
-    margin-top: 2px;
-    margin-bottom: 6px;
-    gap: 2px;
+  .service-item.disabled {
+    opacity: 0.55;
   }
 
   .service-status-pill {
@@ -562,6 +425,45 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Config Button: hidden by default, revealed on hover or keyboard focus */
+  .config-btn {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease, color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .service-item:hover .config-btn,
+  .config-btn:focus-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .config-btn {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+
+  .config-btn:hover {
+    color: var(--accent-primary);
+    background-color: var(--bg-subtle);
+    border-color: var(--accent-primary);
   }
 
   /* ========================================================================= */

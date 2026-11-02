@@ -105,30 +105,8 @@
       "layers": [
         {
           "id": "layer-parcels",
-          "title": "Property Cadastre (Parcels)",
-          "color": "#334155",
-          "visible": true
-        }
-      ]
-    },
-    {
-      "id": "service-planning",
-      "name": "Victorian Planning Schemes",
-      "type": "geojson-static",
-      "url": "local://planning-zones",
-      "visible": true,
-      "layers": [
-        {
-          "id": "layer-zones",
-          "title": "Planning Scheme Zones",
-          "color": "#3b82f6",
-          "visible": true
-        },
-        {
-          "id": "layer-overlays",
-          "title": "Planning Overlays",
-          "color": "#f59e0b",
-          "visible": true
+          "title": "Property Cadastre",
+          "color": "#334155"
         }
       ]
     },
@@ -137,15 +115,7 @@
       "name": "Victorian Administrative Boundaries",
       "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
       "type": "esri-rest",
-      "visible": true,
-      "layers": [
-        {
-          "id": "layer-lga",
-          "title": "Local Government Area (LGA)",
-          "color": "#475569",
-          "visible": true
-        }
-      ]
+      "visible": true
     },
     {
       "id": "service-mvt-transport",
@@ -156,8 +126,7 @@
       "layers": [
         {
           "id": "layer-transport",
-          "title": "Transit Corridors & Rail Lines",
-          "visible": false
+          "title": "Transit Corridors & Rail Lines"
         }
       ]
     }
