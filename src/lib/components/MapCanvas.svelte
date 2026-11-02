@@ -17,7 +17,7 @@
   } from 'terra-draw'
   import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
   import { mapStore } from '../stores/mapStore.svelte'
-  import { MAP_CONFIG } from '../config/map.config'
+  import { MAP_CONFIG, createRasterBasemapStyle } from '../config/map.config'
   import {
     BUILDINGS_3D_GEOJSON,
     LGA_BOUNDARIES_GEOJSON,
@@ -35,12 +35,10 @@
   let drawInstance: TerraDraw | null = null
 
   let padLeft = $derived(
-    mapStore.sidebarOpen
+    mapStore.sidebarOpen && mapStore.settings.layout !== 'compact'
       ? (mapStore.settings.layout === 'site'
           ? 390
-          : mapStore.settings.layout === 'application'
-            ? 380
-            : 404)
+          : 380)
       : 0
   )
 
@@ -56,27 +54,34 @@
     const initialBasemap = MAP_CONFIG.basemaps.find(
       (b) => b.id === mapStore.activeBasemapId
     )
+    const initialTiles = initialBasemap?.tiles || initialBasemap?.rasterTiles
+    const initialStyle: any = (initialBasemap?.styleUrl && (initialBasemap.styleUrl.startsWith('http://') || initialBasemap.styleUrl.startsWith('https://') || initialBasemap.styleUrl.endsWith('.json')))
+      ? initialBasemap.styleUrl
+      : (initialTiles && initialTiles.length > 0)
+        ? createRasterBasemapStyle(initialTiles, initialBasemap.attribution)
+        : (initialBasemap?.style && typeof initialBasemap.style === 'object')
+          ? initialBasemap.style
+          : {
+              version: 8,
+              sources: {
+                osm: {
+                  type: 'raster',
+                  tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                  tileSize: 256
+                }
+              },
+              layers: [
+                {
+                  id: 'osm-layer',
+                  type: 'raster',
+                  source: 'osm'
+                }
+              ]
+            }
 
     map = new maplibregl.Map({
       container: mapContainer,
-      style: initialBasemap?.styleUrl || {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors'
-          }
-        },
-        layers: [
-          {
-            id: 'osm-layer',
-            type: 'raster',
-            source: 'osm'
-          }
-        ]
-      },
+      style: initialStyle,
       center: initialState.center,
       zoom: initialState.zoom,
       pitch: initialState.pitch ?? (mapStore.is3dActive ? 55 : 0),
@@ -93,12 +98,6 @@
       mapStore.selectParcelById(initialState.parcelId)
     }
 
-    // Custom attribution control positioned in bottom-right
-    map.addControl(
-      new maplibregl.AttributionControl({ compact: true }),
-      'bottom-right'
-    )
-
     // Metric Scale Bar
     map.addControl(
       new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }),
@@ -107,6 +106,7 @@
 
     map.on('load', () => {
       if (!map) return
+      map.getCanvas().style.cursor = 'default'
       mapStore.setMap(map)
       mapStore.setSyncServiceLayersCallback(() => setupServiceLayers())
       reapplyAllLayers()
@@ -116,6 +116,7 @@
 
     // Style data & style.load re-load (e.g. when basemap changes)
     map.on('style.load', () => {
+      mapStore.clearAllSourceLoading()
       reapplyAllLayers()
       initOrReinitTerraDraw()
     })
@@ -127,10 +128,51 @@
     })
 
     map.on('idle', () => {
+      mapStore.clearAllSourceLoading()
       if (map && map.getStyle() && !map.getLayer('layer-parcels-fill')) {
         reapplyAllLayers()
       }
       mapStore.viewportVersion++
+    })
+
+    // Track active network/source loading for services and sublayers
+    map.on('sourcedataloading', (e: any) => {
+      if (!e?.sourceId) return
+      const serviceId = mapStore.resolveServiceIdForSource(e.sourceId)
+      if (serviceId) {
+        mapStore.setServiceLoading(serviceId, true)
+      }
+      const layerId = mapStore.resolveLayerIdForSource(e.sourceId)
+      if (layerId) {
+        mapStore.setLayerLoading(layerId, true)
+      }
+    })
+
+    map.on('sourcedata', (e: any) => {
+      if (!e?.sourceId) return
+      if (e.isSourceLoaded) {
+        const serviceId = mapStore.resolveServiceIdForSource(e.sourceId)
+        if (serviceId) {
+          mapStore.setServiceLoading(serviceId, false)
+        }
+        const layerId = mapStore.resolveLayerIdForSource(e.sourceId)
+        if (layerId) {
+          mapStore.setLayerLoading(layerId, false)
+        }
+      }
+    })
+
+    map.on('error', (e: any) => {
+      if (e?.sourceId) {
+        const serviceId = mapStore.resolveServiceIdForSource(e.sourceId)
+        if (serviceId) {
+          mapStore.setServiceLoading(serviceId, false)
+        }
+        const layerId = mapStore.resolveLayerIdForSource(e.sourceId)
+        if (layerId) {
+          mapStore.setLayerLoading(layerId, false)
+        }
+      }
     })
 
     map.on('moveend', () => {
@@ -152,7 +194,7 @@
           const hovered = map.getLayer('layer-parcels-fill') && mapStore.isLayerVisible('layer-parcels')
             ? map.queryRenderedFeatures(e.point, { layers: ['layer-parcels-fill'] })
             : []
-          map.getCanvas().style.cursor = hovered.length > 0 ? 'pointer' : ''
+          map.getCanvas().style.cursor = hovered.length > 0 ? 'pointer' : 'default'
         }
 
         // Live rubberband preview line during active measurement
@@ -644,9 +686,10 @@
 
       // Check which sublayers are currently enabled AND visible
       const service = group.serviceId ? mapStore.services.find((s) => s.id === group.serviceId) : null
+      const candidateLayers = service?.layers && service.layers.length > 0 ? service.layers : group.layers
       const isServiceActive = service ? service.enabled !== false && service.visible !== false : true
       const visibleLayers = isServiceActive
-        ? group.layers.filter((l) => l.enabled !== false && l.visible)
+        ? candidateLayers.filter((l) => l.enabled !== false && l.visible)
         : []
 
       if (visibleLayers.length > 0) {
@@ -1230,12 +1273,10 @@
   $effect(() => {
     const layers = mapStore.layers
     const services = mapStore.services
+    const vp = mapStore.viewportVersion
     if (!map || !map.getStyle()) return
     setupServiceLayers()
-    for (const l of layers) {
-      mapStore.updateMapLayerVisibility(l)
-      mapStore.updateMapLayerOpacity(l)
-    }
+    mapStore.syncAllOperationalLayers()
   })
 
   // Update selection highlight when currentHighlightedFeature changes
@@ -1359,6 +1400,61 @@
             type: 'Feature',
             properties: { radius: buf.radiusMeters },
             geometry: buf.geometry
+          }
+        ]
+      })
+    } else {
+      src.setData({
+        type: 'FeatureCollection',
+        features: []
+      })
+    }
+  })
+
+  // Update geocoded search result location pin
+  $effect(() => {
+    const pin = mapStore.activeSearchPin
+    if (!map || !map.getStyle()) return
+    let src = map.getSource('search-pin-source') as maplibregl.GeoJSONSource
+    if (!src) {
+      map.addSource('search-pin-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      })
+      map.addLayer({
+        id: 'search-pin-pulse',
+        type: 'circle',
+        source: 'search-pin-source',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': '#0284c7',
+          'circle-opacity': 0.25,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#0284c7'
+        }
+      })
+      map.addLayer({
+        id: 'search-pin-core',
+        type: 'circle',
+        source: 'search-pin-source',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#0284c7',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#ffffff'
+        }
+      })
+      src = map.getSource('search-pin-source') as maplibregl.GeoJSONSource
+    }
+
+    if (pin && typeof pin[0] === 'number' && typeof pin[1] === 'number') {
+      src.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: pin },
+            properties: {}
           }
         ]
       })
@@ -1547,7 +1643,7 @@
 
     if (mapContainer && map) {
       map.getCanvas().style.cursor =
-        m.type && !m.isFinished ? 'crosshair' : (mapStore.activeMarkupTool || mapStore.activeQueryTool) ? 'crosshair' : ''
+        m.type && !m.isFinished ? 'crosshair' : (mapStore.activeMarkupTool || mapStore.activeQueryTool) ? 'crosshair' : 'default'
     }
   })
 
@@ -1766,6 +1862,10 @@
     height: 100%;
   }
 
+  .map-container :global(.maplibregl-canvas-container.maplibregl-interactive) {
+    cursor: default;
+  }
+
   .map-tools-floating {
     position: absolute;
     top: 14px;
@@ -1782,7 +1882,13 @@
   }
 
   .map-tools-floating.compact-layout {
-    top: 68px;
+    top: auto;
+    bottom: 24px;
+    right: 14px;
+  }
+
+  :global(.maplibregl-ctrl-attrib) {
+    display: none !important;
   }
 
   .map-tools-floating.mobile-layout {
@@ -2037,16 +2143,22 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+    overflow: hidden;
     z-index: 10;
+    container-type: size;
   }
 
   .print-frame-box {
     position: relative;
-    width: min(85%, calc(85vh * var(--aspect-ratio, 1.414)));
+    box-sizing: border-box;
     aspect-ratio: var(--aspect-ratio, 1.414);
-    max-height: 85%;
-    border: 2px dashed rgba(2, 132, 199, 0.8);
-    box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.22);
+    width: min(calc(100cqw - 48px), calc((100cqh - 48px) * var(--aspect-ratio, 1.414)));
+    max-width: calc(100cqw - 48px);
+    max-height: calc(100cqh - 48px);
+    border: 2px dashed rgba(2, 132, 199, 0.85);
+    box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.28);
     border-radius: 2px;
   }
 

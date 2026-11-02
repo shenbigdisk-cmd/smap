@@ -72,3 +72,8 @@ AI assistants frequently generate tedious, cluttered interfaces loaded with redu
 ## 2. Core Preferences & Philosophy
 - **Frontend Stack**: TypeScript, Svelte (with Vite).
 - **Philosophy**: Local-first, user-owned state, clean architecture, privacy-first.
+
+## 3. Background Process & Testing Hygiene
+- **Zero Orphaned Chrome / Puppeteer Processes**: Never leave headless or automated browser instances running in the background after verification or tasks are completed.
+- **Mandatory Cleanup**: After running Puppeteer or browser automation, navigate away to `about:blank` and terminate any background Chrome processes using temporary/puppeteer user data profiles (`puppeteer_dev_chrome_profile`).
+- **Preserve User Session**: Never kill the user's personal browser processes (`Chrome SxS` or standard user profile).

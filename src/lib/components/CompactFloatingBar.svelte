@@ -19,9 +19,7 @@
   }
 
   function clear() {
-    mapStore.searchQuery = ''
-    mapStore.searchResults = []
-    mapStore.searchFocused = false
+    mapStore.clearSearch()
     inputEl?.focus()
   }
 
@@ -108,9 +106,9 @@
           class:active={mapStore.activeTab === view.id && mapStore.sidebarOpen}
           onclick={() => togglePanel(view.id)}
           title={view.name}
+          aria-label={view.name}
         >
-          <ModuleIcon id={view.icon || view.id} size={15} />
-          <span>{view.shortTitle}</span>
+          <ModuleIcon id={view.icon || view.id} size={18} />
           {#if (view.id === 'results' || view.moduleId === 'results') && mapStore.hasFeatureResults}
             <span class="active-dot" title="Active features available"></span>
           {/if}
@@ -123,9 +121,9 @@
         class:active={mapStore.activeTab === 'toolbox' && mapStore.sidebarOpen}
         onclick={() => togglePanel('toolbox')}
         title="GIS Toolbox"
+        aria-label="GIS Toolbox"
       >
-        <ModuleIcon id="toolbox" size={15} />
-        <span>Toolbox</span>
+        <ModuleIcon id="toolbox" size={18} />
       </button>
     </div>
   </div>
@@ -147,14 +145,8 @@
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-
-  .compact-header-row::-webkit-scrollbar {
-    display: none;
+    position: relative;
+    overflow: visible;
   }
 
   .floating-search-card {
@@ -170,6 +162,7 @@
     border: 1px solid var(--border-color);
     flex-shrink: 0;
     pointer-events: auto;
+    z-index: 60;
   }
 
   .search-input-area {
@@ -322,23 +315,32 @@
     gap: 6px;
     flex-shrink: 0;
     pointer-events: auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 2px 0;
+    z-index: 55;
+  }
+
+  .floating-buttons-group::-webkit-scrollbar {
+    display: none;
   }
 
   .chip-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
     background-color: var(--bg-card);
-    color: var(--text-main);
+    color: var(--text-muted);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    height: 44px;
-    padding: 0 14px;
-    font-size: 13px;
-    font-weight: 600;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     cursor: pointer;
-    white-space: nowrap;
+    flex-shrink: 0;
     transition: all 0.15s ease;
   }
 
@@ -346,25 +348,31 @@
     background-color: var(--bg-subtle);
     border-color: var(--accent-primary);
     color: var(--text-main);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
   }
 
   .chip-btn.active {
     background-color: var(--accent-primary);
     border-color: var(--accent-primary);
-    color: var(--text-on-accent);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
   }
 
-
   .active-dot {
-    width: 7px;
-    height: 7px;
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background-color: var(--accent-primary);
-    display: inline-block;
+    border: 1.5px solid var(--bg-card);
   }
 
   .chip-btn.active .active-dot {
-    background-color: var(--text-on-accent);
+    background-color: #ffffff;
+    border-color: var(--accent-primary);
   }
 
   @media (max-width: 640px) {

@@ -2,9 +2,11 @@ import type {
   LayerCapabilities,
   LayerDataConfig,
   LayerRenderingConfig,
+  LegendItem,
   ServiceDefinition,
   ServiceLayer
 } from '../../types'
+import { legendService, sampleColorFromBase64 } from '../legendService'
 import type { IServiceLoader, RawLayerConfig, RawServiceConfig } from './types'
 
 /**
@@ -25,28 +27,11 @@ export class EsriServiceLoader implements IServiceLoader {
 
   async load(config: RawServiceConfig): Promise<ServiceDefinition> {
     const cleanUrl = config.url.replace(/\/+$/, '')
-    const serviceId = config.id || `esri-${Math.random().toString(36).substring(2, 9)}`
+    const serviceId = config.id || this.generateDeterministicId(cleanUrl)
     const isEnabled = config.enabled !== false
 
-    // FAST KILL: If disabled in config, skip all network requests immediately
-    if (!isEnabled) {
-      return {
-        id: serviceId,
-        name: config.name || 'ArcGIS Service (Disabled)',
-        type: 'esri-rest',
-        url: cleanUrl,
-        enabled: false,
-        visible: false,
-        status: 'offline',
-        opacity: config.opacity ?? 0.8,
-        description: config.description,
-        attribution: config.attribution,
-        layers: (config.layers || []).map((l, idx) => this.normalizeDeclaredLayer(l, serviceId, cleanUrl, idx, false))
-      }
-    }
-
-    // If explicit layers are provided and autoDiscover is not requested, use declared layers
-    if (config.layers && config.layers.length > 0 && !config.autoDiscover) {
+    // If explicit layers are provided and autoDiscover is explicitly disabled, use declared layers
+    if (config.layers && config.layers.length > 0 && config.autoDiscover === false) {
       return {
         id: serviceId,
         name: config.name || 'ArcGIS Service',
@@ -62,99 +47,191 @@ export class EsriServiceLoader implements IServiceLoader {
       }
     }
 
-    // Auto-Discovery: Introspect /MapServer?f=json with 4s circuit-breaker timeout
+    // Auto-Discovery: Introspect /MapServer?f=json and /legend?f=json in parallel
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 4000)
+      const [metaRes, legendRes] = await Promise.all([
+        fetch(`${cleanUrl}?f=json`, {
+          signal: AbortSignal.timeout(6000),
+          headers: { Accept: 'application/json' }
+        }),
+        fetch(`${cleanUrl}/legend?f=json`, {
+          signal: AbortSignal.timeout(6000),
+          headers: { Accept: 'application/json' }
+        }).catch(() => null)
+      ])
 
-      const res = await fetch(`${cleanUrl}?f=json`, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' }
-      }).finally(() => clearTimeout(timeoutId))
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+      if (!metaRes.ok) {
+        throw new Error(`HTTP ${metaRes.status}: ${metaRes.statusText}`)
       }
 
-      const meta = await res.json()
+      const meta = await metaRes.json()
       if (meta.error) {
         throw new Error(meta.error.message || 'ArcGIS Service Error')
       }
 
-      const isTileCache = Boolean(meta.singleFusedMapCache)
-      const serviceName = config.name || meta.serviceDescription || meta.mapName || 'ArcGIS Service'
-      const rawLayers = Array.isArray(meta.layers) ? meta.layers : []
-
-      const layers: ServiceLayer[] = rawLayers.map((metaLayer: any, idx: number) => {
-        const sublayerId = metaLayer.id !== undefined ? metaLayer.id : idx
-        const layerId = `${serviceId}-layer-${sublayerId}`
-        const geomType = this.mapGeometryType(metaLayer.geometryType)
-
-        const defaultColor = '#2563eb'
-        const isLayerVisible = metaLayer.defaultVisibility !== false
-
-        const rendering: LayerRenderingConfig = {
-          format: isTileCache ? 'raster' : 'geojson',
-          sourceId: `${layerId}-source`,
-          style: {
-            type: geomType === 'polygon' ? 'fill' : geomType === 'line' ? 'line' : 'circle',
-            paint:
-              geomType === 'polygon'
-                ? { 'fill-color': defaultColor, 'fill-opacity': 0.6 }
-                : geomType === 'line'
-                  ? { 'line-color': defaultColor, 'line-width': 2 }
-                  : { 'circle-color': defaultColor, 'circle-radius': 5 }
+      let legendLayers: any[] = []
+      if (legendRes && legendRes.ok) {
+        try {
+          const legJson = await legendRes.json()
+          if (Array.isArray(legJson.layers)) {
+            legendLayers = legJson.layers
+            legendService.cacheEsriLegend(cleanUrl, legJson.layers)
           }
-        }
+        } catch {}
+      }
 
-        const data: LayerDataConfig = {
-          adapter: 'esri-rest',
-          url: `${cleanUrl}/${sublayerId}`,
-          serviceLayerId: sublayerId,
-          primaryKey: 'OBJECTID',
-          displayField: 'name'
-        }
+      const isTileCache = Boolean(meta.singleFusedMapCache)
+      const desc = (meta.serviceDescription || '').trim()
+      const cleanDesc = desc.startsWith('{') || desc.length > 80 ? undefined : desc
+      const rawTitle = config.name || meta.mapName || cleanDesc || this.inferServiceNameFromUrl(cleanUrl)
+      const serviceName = this.cleanLayerTitle(rawTitle) || 'ArcGIS Service'
+      const rawLayers = Array.isArray(meta.layers) ? meta.layers : []
+      // Keep operational spatial layers (filter out pure composite/group folders)
+      const operationalMetaLayers = rawLayers.filter(
+        (ml: any) => !ml.subLayerIds || ml.subLayerIds.length === 0
+      )
 
-        const capabilities: LayerCapabilities = {
-          identify: 'server',
-          query: true,
-          queryAttribute: true,
-          querySpatial: true,
-          buffer: true,
-          export: true,
-          table: true
-        }
+      const BOUNDARY_COLORS = [
+        '#475569', '#6366f1', '#0ea5e9', '#0d9488', '#10b981',
+        '#8b5cf6', '#d97706', '#f43f5e', '#3b82f6', '#14b8a6',
+        '#e11d48', '#84cc16', '#a855f7', '#0284c7', '#64748b'
+      ]
 
-        return {
-          id: layerId,
-          serviceId,
-          serviceLayerId: sublayerId,
-          title: metaLayer.name || `Sublayer ${sublayerId}`,
-          category: 'planning',
-          geometryType: geomType,
-          description: metaLayer.description || metaLayer.name,
-          visible: isLayerVisible,
-          enabled: true,
-          opacity: 0.8,
-          color: defaultColor,
-          render: {
-            type: isTileCache ? 'esri_tile' : 'esri_export',
-            url: isTileCache ? `${cleanUrl}/tile/{z}/{y}/{x}` : `${cleanUrl}/export`,
-            layers: `show:${sublayerId}`,
-            format: 'png32',
-            transparent: true,
-            tileSize: 512
-          },
-          feature_service: {
-            type: 'esri_rest',
-            collection_url: `${cleanUrl}/${sublayerId}`,
-            id_field: 'OBJECTID'
-          },
-          rendering,
-          data,
-          capabilities
+      const layers: ServiceLayer[] = await Promise.all(
+        operationalMetaLayers.map(async (metaLayer: any, idx: number) => {
+          const sublayerId = metaLayer.id !== undefined ? metaLayer.id : idx
+
+          // Match official legend for this sublayer from MapServer /legend?f=json
+          const legendMatch = legendLayers.find((l: any) => l.layerId === sublayerId)
+          let layerLegendItems: LegendItem[] | undefined
+          let realColor: string | undefined
+
+          if (legendMatch && Array.isArray(legendMatch.legend) && legendMatch.legend.length > 0) {
+            layerLegendItems = await Promise.all(
+              legendMatch.legend.map(async (legItem: any) => {
+                const dataUri = legItem.imageData
+                  ? `data:${legItem.contentType || 'image/png'};base64,${legItem.imageData}`
+                  : undefined
+                const color = dataUri ? await sampleColorFromBase64(legItem.imageData, legItem.contentType) : undefined
+                return {
+                  label: legItem.label || metaLayer.name,
+                  code: legItem.values?.[0] || legItem.label,
+                  value: legItem.values?.[0] || legItem.label,
+                  image: dataUri,
+                  color: color || '#2563eb',
+                  border: color || '#475569'
+                }
+              })
+            )
+            realColor = layerLegendItems[0]?.color
+          }
+
+          // Check if there is an explicit declared layer override for this sublayer
+          const declaredMatch = (config.layers || []).find((l) => {
+            if (l.serviceLayerId !== undefined) {
+              return Number(l.serviceLayerId) === sublayerId
+            }
+            if (l.id) {
+              return l.id === `${serviceId}-layer-${sublayerId}` || l.id === `layer-${sublayerId}`
+            }
+            return false
+          })
+
+          const layerId = declaredMatch?.id || `${serviceId}-layer-${sublayerId}`
+          const geomType = declaredMatch?.geometryType || this.mapGeometryType(metaLayer.geometryType)
+          const defaultColor = declaredMatch?.color || realColor || BOUNDARY_COLORS[sublayerId % BOUNDARY_COLORS.length]
+          const isServiceVisible = config.visible !== false
+          const isLayerDefaultVisible = declaredMatch?.visible ?? (
+            isServiceVisible ? (declaredMatch?.defaultVisibility ?? Boolean(metaLayer.defaultVisibility)) : false
+          )
+          const layerTitle = declaredMatch?.title
+            ? this.cleanLayerTitle(declaredMatch.title)
+            : (this.cleanLayerTitle(metaLayer.name) || `Sublayer ${sublayerId}`)
+          const isLayerEnabled = (declaredMatch?.enabled !== false) && isEnabled
+
+          const rendering: LayerRenderingConfig = declaredMatch?.rendering || {
+            format: isTileCache ? 'raster' : 'geojson',
+            sourceId: `${layerId}-source`,
+            style: {
+              type: geomType === 'polygon' ? 'fill' : geomType === 'line' ? 'line' : 'circle',
+              paint:
+                geomType === 'polygon'
+                  ? { 'fill-color': defaultColor, 'fill-opacity': declaredMatch?.opacity ?? (config.opacity ?? 0.6) }
+                  : geomType === 'line'
+                    ? { 'line-color': defaultColor, 'line-width': 2 }
+                    : { 'circle-color': defaultColor, 'circle-radius': 5 }
+            }
+          }
+
+          const data: LayerDataConfig = declaredMatch?.data || {
+            adapter: 'esri-rest',
+            url: `${cleanUrl}/${sublayerId}`,
+            serviceLayerId: sublayerId,
+            primaryKey: 'OBJECTID',
+            displayField: 'name'
+          }
+
+          const capabilities: LayerCapabilities = {
+            identify: 'server',
+            query: true,
+            queryAttribute: true,
+            querySpatial: true,
+            buffer: true,
+            export: true,
+            table: true,
+            ...(declaredMatch?.capabilities || {})
+          }
+
+          return {
+            id: layerId,
+            serviceId,
+            serviceLayerId: sublayerId,
+            title: layerTitle,
+            category: declaredMatch?.category || config.category || (cleanUrl.toLowerCase().includes('boundary') ? 'boundaries' : 'planning'),
+            geometryType: geomType,
+            description: declaredMatch?.description || metaLayer.description || metaLayer.name,
+            visible: isLayerDefaultVisible,
+            defaultVisibility: declaredMatch?.defaultVisibility !== undefined ? declaredMatch.defaultVisibility : Boolean(metaLayer.defaultVisibility),
+            enabled: isLayerEnabled,
+            opacity: declaredMatch?.opacity ?? (config.opacity ?? 0.8),
+            color: defaultColor,
+            legend: declaredMatch?.legend || (layerLegendItems ? {
+              title: layerTitle,
+              dynamic: true,
+              items: layerLegendItems
+            } : undefined),
+            render: declaredMatch?.render || {
+              type: isTileCache ? 'esri_tile' : 'esri_export',
+              url: isTileCache ? `${cleanUrl}/tile/{z}/{y}/{x}` : `${cleanUrl}/export`,
+              layers: `show:${sublayerId}`,
+              format: 'png32',
+              transparent: true,
+              tileSize: 512
+            },
+            feature_service: declaredMatch?.feature_service || {
+              type: 'esri_rest',
+              collection_url: `${cleanUrl}/${sublayerId}`,
+              id_field: 'OBJECTID'
+            },
+            rendering,
+            data,
+            capabilities
+          }
+        })
+      )
+
+      // Include any declared layers that did not match any metaLayer ID
+      for (const decl of config.layers || []) {
+        const isIncluded = layers.some(
+          (l) =>
+            l.serviceLayerId !== undefined &&
+            decl.serviceLayerId !== undefined &&
+            Number(l.serviceLayerId) === Number(decl.serviceLayerId)
+        )
+        if (!isIncluded) {
+          layers.push(this.normalizeDeclaredLayer(decl, serviceId, cleanUrl, layers.length, isEnabled))
         }
-      })
+      }
 
       return {
         id: serviceId,
@@ -171,7 +248,24 @@ export class EsriServiceLoader implements IServiceLoader {
       }
     } catch (err: any) {
       console.warn(`[EsriServiceLoader] Could not introspect '${cleanUrl}':`, err?.message)
-      // Resilient fallback: Return offline service definition instead of crashing
+      if (config.layers && config.layers.length > 0) {
+        return {
+          id: serviceId,
+          name: config.name || 'ArcGIS Service',
+          type: 'esri-rest',
+          url: cleanUrl,
+          enabled: true,
+          visible: config.visible ?? true,
+          status: 'ready',
+          opacity: config.opacity ?? 0.8,
+          description: config.description,
+          attribution: config.attribution,
+          layers: config.layers.map((l, idx) =>
+            this.normalizeDeclaredLayer(l, serviceId, cleanUrl, idx, true)
+          )
+        }
+      }
+      // Resilient fallback: Return error service definition instead of crashing
       return {
         id: serviceId,
         name: config.name || 'ArcGIS Service (Unavailable)',
@@ -179,7 +273,7 @@ export class EsriServiceLoader implements IServiceLoader {
         url: cleanUrl,
         enabled: false,
         visible: false,
-        status: 'offline',
+        status: 'error',
         error: err?.message || 'Server timeout or network error',
         opacity: config.opacity ?? 0.8,
         description: config.description,
@@ -231,11 +325,12 @@ export class EsriServiceLoader implements IServiceLoader {
       id: layerId,
       serviceId,
       serviceLayerId: sublayerId,
-      title: raw.title || `Layer ${sublayerId}`,
+      title: this.cleanLayerTitle(raw.title) || `Layer ${sublayerId}`,
       category: raw.category || 'planning',
       geometryType: geomType,
       description: raw.description,
-      visible: raw.visible ?? true,
+      visible: raw.visible ?? (serviceEnabled ? (raw.defaultVisibility ?? true) : false),
+      defaultVisibility: raw.defaultVisibility !== undefined ? raw.defaultVisibility : (raw.visible ?? true),
       enabled: (raw.enabled !== false) && serviceEnabled,
       opacity: raw.opacity ?? 0.8,
       color,
@@ -315,5 +410,43 @@ export class EsriServiceLoader implements IServiceLoader {
       if (lower.includes('polyline')) return 'line'
     }
     return 'polygon'
+  }
+
+  private cleanLayerTitle(rawTitle?: string): string {
+    if (!rawTitle) return ''
+    return rawTitle
+      // Strip technical infrastructure tags in brackets like (Live ArcGIS), (Local Engine), (Vector Tiles), (LGA), (Parcels)
+      .replace(/\s*\((?:Live ArcGIS|Local Engine|Vector Tiles|Parcels|LGA|Solid|Dash)\)\s*/gi, ' ')
+      // For any remaining brackets/parentheses, keep the inner content if alphanumeric/year (e.g. (2020) -> 2020)
+      .replace(/\s*[\(\[]([A-Za-z0-9\s\-]+)[\)\]]\s*/g, ' $1 ')
+      // Clean any stray brackets or multiple spaces
+      .replace(/[()\[\]]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+
+  private generateDeterministicId(url: string): string {
+    try {
+      const parsed = new URL(url)
+      const segments = parsed.pathname.split('/').filter(Boolean)
+      const serviceIdx = segments.findIndex((s) => s.toLowerCase() === 'services')
+      if (serviceIdx >= 0 && segments.length > serviceIdx + 1) {
+        const relevant = segments.slice(serviceIdx + 1).filter((s) => !/^(MapServer|FeatureServer)$/i.test(s))
+        return `service-${relevant.join('-').toLowerCase()}`
+      }
+      const last = segments.filter((s) => !/^(MapServer|FeatureServer)$/i.test(s)).pop()
+      return `service-${(last || 'esri').toLowerCase()}`
+    } catch {
+      return `service-esri-${url.replace(/[^a-zA-Z0-9]/g, '-').slice(-16).toLowerCase()}`
+    }
+  }
+
+  private inferServiceNameFromUrl(url: string): string {
+    const segments = url.replace(/\/+$/, '').split('/').filter(Boolean)
+    const last = segments.filter((s) => !/^(MapServer|FeatureServer)$/i.test(s)).pop() || 'ArcGIS Service'
+    return last
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
   }
 }

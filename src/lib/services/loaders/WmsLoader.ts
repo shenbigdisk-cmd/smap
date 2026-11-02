@@ -31,7 +31,7 @@ export class WmsLoader implements IServiceLoader {
         url: cleanUrl,
         enabled: false,
         visible: false,
-        status: 'offline',
+        status: 'ready',
         opacity: config.opacity ?? 0.8,
         description: config.description,
         layers: (config.layers || []).map((l, idx) => this.normalizeDeclaredLayer(l, serviceId, cleanUrl, idx, false, isWmts))

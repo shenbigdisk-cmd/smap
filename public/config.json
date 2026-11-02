@@ -1,0 +1,134 @@
+{
+  "title": "VicPlan Spatial Engine",
+  "subtitle": "Planning Schemes & Cadastral Cadastre Platform",
+  "agency": "Department of Transport and Planning Victoria",
+  "initialView": {
+    "center": [144.9631, -37.8136],
+    "zoom": 14.8,
+    "pitch": 0,
+    "bearing": 0
+  },
+  "extentVictoria": {
+    "bbox": [
+      [140.9616819, -39.1591895],
+      [149.976679, -33.980647]
+    ]
+  },
+  "coordinates": {
+    "system": "GDA2020",
+    "datum": "GRS80",
+    "projection": "MGA2020",
+    "defaultZone": 55,
+    "transformation": "Null",
+    "labels": {
+      "projected": "MGA2020 Zone 55",
+      "geographic": "GDA2020 Lat/Lng",
+      "datum": "GDA2020 (GRS80 / Null Transform)"
+    }
+  },
+  "modules": [
+    "workflows",
+    "assistant",
+    "layers",
+    "query",
+    "results",
+    "print",
+    "toolbox",
+    "measure",
+    "markup",
+    "export",
+    "bookmarks",
+    "buffer"
+  ],
+  "search": {
+    "defaultProvider": "all",
+    "providers": [
+      {
+        "id": "vicmap-geocoder",
+        "name": "Vicmap Address",
+        "type": "esri-geocoder",
+        "url": "https://corp-geo.mapshare.vic.gov.au/arcgis/rest/services/Geocoder/VMAddressEZIAdd/GeocodeServer",
+        "enabled": true,
+        "priority": 1
+      },
+      {
+        "id": "local-cadastre",
+        "name": "Parcels & Cadastre",
+        "type": "local-parcels",
+        "enabled": true,
+        "priority": 2
+      },
+      {
+        "id": "coordinates",
+        "name": "Coordinates",
+        "type": "coordinates",
+        "enabled": true,
+        "priority": 0
+      }
+    ]
+  },
+  "basemaps": [
+    {
+      "name": "Light",
+      "style": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+      "type": "vector",
+      "thumbnail": "/thumbnails/carto-light.png"
+    },
+    {
+      "name": "Voyager",
+      "style": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+      "type": "vector",
+      "thumbnail": "/thumbnails/carto-voyager.png"
+    },
+    {
+      "name": "Dark",
+      "style": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+      "type": "vector",
+      "thumbnail": "/thumbnails/carto-dark.png"
+    },
+    {
+      "name": "Satellite",
+      "type": "raster",
+      "tiles": [
+        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      ],
+      "thumbnail": "/thumbnails/esri-satellite.png"
+    }
+  ],
+  "services": [
+    {
+      "id": "service-cadastre",
+      "name": "Digital Cadastre Database",
+      "type": "geojson-static",
+      "url": "local://cadastre",
+      "visible": true,
+      "layers": [
+        {
+          "id": "layer-parcels",
+          "title": "Property Cadastre",
+          "color": "#334155"
+        }
+      ]
+    },
+    {
+      "id": "service-vic-boundaries",
+      "name": "Victorian Administrative Boundaries",
+      "url": "https://spatial.planning.vic.gov.au/gis/rest/services/boundary/MapServer",
+      "type": "esri-rest",
+      "visible": true
+    },
+    {
+      "id": "service-mvt-transport",
+      "name": "Public Transport Network",
+      "type": "vector-tile",
+      "url": "https://basemaps.cartocdn.com/vectortiles/carto.streets/v1/{z}/{x}/{y}.mvt",
+      "visible": false,
+      "layers": [
+        {
+          "id": "layer-transport",
+          "title": "Transit Corridors & Rail Lines"
+        }
+      ]
+    }
+  ]
+}

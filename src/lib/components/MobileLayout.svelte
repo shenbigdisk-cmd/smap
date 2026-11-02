@@ -80,9 +80,7 @@
   }
 
   function clearSearch() {
-    mapStore.searchQuery = ''
-    mapStore.searchResults = []
-    mapStore.searchFocused = false
+    mapStore.clearSearch()
     isSearchActive = false
     searchInputEl?.focus()
   }

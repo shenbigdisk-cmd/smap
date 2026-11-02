@@ -60,12 +60,16 @@ export type SurfaceMode = string
 export type BasemapId = 'carto-light' | 'carto-voyager' | 'carto-dark' | 'esri-satellite'
 
 export interface BasemapConfig {
-  id: BasemapId
+  id: BasemapId | string
   name: string
-  description: string
+  description?: string
   styleUrl?: string
+  style?: any
+  type?: 'vector' | 'raster'
+  tiles?: string[]
   rasterTiles?: string[]
-  attribution: string
+  thumbnail?: string
+  attribution?: string
 }
 
 export type ZoneCategory =
@@ -248,12 +252,14 @@ export interface LayerDataConfig {
 }
 
 export interface LegendItem {
+  id?: string
   label: string
   code?: string
   color: string
   stroke?: string
   border?: string
   pattern?: string
+  image?: string
   value?: any
   property?: string
 }
@@ -274,6 +280,7 @@ export interface ServiceLayer {
   geometryType?: 'point' | 'line' | 'polygon'
   description?: string
   visible: boolean
+  defaultVisibility?: boolean
   enabled?: boolean
   opacity: number
   color: string
@@ -301,11 +308,13 @@ export interface ServiceDefinition {
   name: string
   type: ServiceType
   url: string
+  category?: string
   attribution?: string
   description?: string
   visible: boolean
+  defaultVisibility?: boolean
   enabled?: boolean
-  status?: 'ready' | 'loading' | 'offline' | 'error'
+  status?: 'ready' | 'loading' | 'error'
   error?: string
   autoDiscover?: boolean
   opacity: number
@@ -378,10 +387,14 @@ export interface SearchResult {
   id: string
   title: string
   subtitle: string
-  category: 'address' | 'parcel' | 'spi' | 'lga' | 'zone'
+  category: 'address' | 'parcel' | 'spi' | 'lga' | 'zone' | 'coordinate' | 'place' | string
   center: [number, number]
   zoom?: number
   parcelId?: string
+  extent?: [number, number, number, number]
+  sourceId?: string
+  sourceName?: string
+  score?: number
 }
 
 export type MeasurementType = 'distance' | 'area' | 'coordinate'
@@ -447,6 +460,5 @@ export interface UserPrintSettings {
   showNorthArrow: boolean
   showCoordinates: boolean
   showLegend: boolean
-  dynamicLegend?: boolean
   showPrintFrame: boolean
 }

@@ -15,14 +15,25 @@ export class PmtilesLoader implements IServiceLoader {
     const type = (config.type || '').toLowerCase()
     const url = (config.url || '').toLowerCase()
     const hasPmtilesLayer = (config.layers || []).some((l) => l.render?.type === 'pmtiles')
-    return type === 'pmtiles' || url.endsWith('.pmtiles') || hasPmtilesLayer
+    return (
+      type === 'pmtiles' ||
+      type === 'vector-tile' ||
+      type === 'mvt' ||
+      url.endsWith('.pmtiles') ||
+      url.includes('{z}/{x}/{y}') ||
+      hasPmtilesLayer
+    )
   }
 
   async load(config: RawServiceConfig): Promise<ServiceDefinition> {
     const serviceId = config.id || `pmtiles-${Math.random().toString(36).substring(2, 9)}`
     const isEnabled = config.enabled !== false
+    const rawLayers =
+      config.layers && config.layers.length > 0
+        ? config.layers
+        : [{ id: `${serviceId}-layer-0`, title: config.name || 'Vector Tile Layer' }]
 
-    const layers: ServiceLayer[] = (config.layers || []).map((raw, idx) => {
+    const layers: ServiceLayer[] = rawLayers.map((raw, idx) => {
       const layerId = raw.id || `${serviceId}-layer-${idx}`
       const color = raw.color || '#3b82f6'
 
@@ -90,7 +101,7 @@ export class PmtilesLoader implements IServiceLoader {
       url: config.url,
       enabled: isEnabled,
       visible: config.visible ?? true,
-      status: isEnabled ? 'ready' : 'offline',
+      status: 'ready',
       opacity: config.opacity ?? 0.8,
       description: config.description,
       attribution: config.attribution,

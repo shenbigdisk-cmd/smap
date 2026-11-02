@@ -18,9 +18,7 @@
   }
 
   function clearSearch() {
-    mapStore.searchQuery = ''
-    mapStore.searchResults = []
-    mapStore.searchFocused = false
+    mapStore.clearSearch()
     searchInputEl?.focus()
   }
 </script>
@@ -46,8 +44,8 @@
         <span class="crest-text">VIC</span>
       </div>
       <div class="brand-text">
-        <h1 class="brand-title">{MAP_CONFIG.title}</h1>
-        <span class="brand-subtitle">{MAP_CONFIG.subtitle}</span>
+        <h1 class="brand-title">{mapStore.appTitle || MAP_CONFIG.title}</h1>
+        <span class="brand-subtitle">{mapStore.appSubtitle || MAP_CONFIG.subtitle}</span>
       </div>
     </div>
   </div>
@@ -127,7 +125,7 @@
     gap: 16px;
     position: relative;
     z-index: 50;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+    box-shadow: none;
     user-select: none;
   }
 

@@ -17,13 +17,10 @@
     return legendService.getAllActiveLegendGroups(
       mapStore.layers,
       mapStore.map,
-      !mapStore.dynamicLegendEnabled
+      undefined,
+      (l) => mapStore.isLayerVisible(l)
     )
   })
-
-  let totalVisibleSwatches = $derived(
-    activeLegendGroups.reduce((acc, g) => acc + g.items.length, 0)
-  )
 
   function toggleSublayerLegend(layerId: string) {
     expandedSublayerLegendId = expandedSublayerLegendId === layerId ? null : layerId
@@ -60,40 +57,46 @@
             </svg>
             <span>Back to Services</span>
           </button>
+          {#if mapStore.isServiceLoading(selectedService.id)}
+            <span class="service-loading-spinner" title="Loading {selectedService.name}..." aria-label="Loading service">
+              <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+                <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+                <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+              </svg>
+            </span>
+          {/if}
         </div>
       {/if}
 
-      <!-- Sublayer checklist: only displayed when there are multiple sub-layers -->
-      <div class="service-detail-actions">
-        <button
-          type="button"
-          class="service-kill-toggle"
-          class:is-active={selectedService.enabled !== false}
-          onclick={() => mapStore.toggleServiceEnabled(selectedService.id)}
-        >
-          {selectedService.enabled !== false ? 'Disable Entire Service' : 'Enable Service'}
-        </button>
-      </div>
 
       {#if selectedService.layers.length > 0}
         <div class="sublayers-list">
           {#each selectedService.layers as layer (layer.id)}
-            {@const isLayerEnabled = layer.enabled !== false && selectedService.enabled !== false}
-            {@const layerLegend = legendService.getLayerLegendGroup(layer, mapStore.map, !mapStore.dynamicLegendEnabled)}
+            {@const layerLegend = legendService.getLayerLegendGroup(layer, mapStore.map)}
             <div class="sublayer-item-wrapper">
-              <div class="sublayer-item" class:disabled={!layer.visible || !isLayerEnabled}>
+              <div class="sublayer-item" class:disabled={!layer.visible}>
                 <label class="sublayer-toggle">
                   <input
                     type="checkbox"
-                    checked={layer.visible && isLayerEnabled}
-                    disabled={!isLayerEnabled}
+                    checked={layer.visible}
                     onchange={() => mapStore.toggleLayer(layer.id)}
                   />
-                  {#if layer.color}
+                  {#if layer.legend?.items?.[0]?.image}
+                    <img class="sublayer-swatch-img" src={layer.legend.items[0].image} alt="" />
+                  {:else if layer.color}
                     <span class="sublayer-swatch-dot" style="background-color: {layer.color};"></span>
                   {/if}
                   <span class="sublayer-name" title={layer.title}>{layer.title}</span>
                 </label>
+
+                {#if mapStore.isLayerLoading(layer.id)}
+                  <span class="service-loading-spinner" title="Loading {layer.title}..." aria-label="Loading layer">
+                    <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+                      <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+                      <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+                    </svg>
+                  </span>
+                {/if}
 
                 <div class="sublayer-actions">
                   {#if layerLegend && layerLegend.items.length > 0}
@@ -112,16 +115,6 @@
                       </svg>
                     </button>
                   {/if}
-
-                  <button
-                    type="button"
-                    class="sublayer-mute-btn"
-                    class:muted={!isLayerEnabled}
-                    onclick={() => mapStore.toggleLayerEnabled(layer.id)}
-                    title={isLayerEnabled ? "Disable sublayer" : "Enable sublayer"}
-                  >
-                    {isLayerEnabled ? 'Active' : 'Disabled'}
-                  </button>
                 </div>
               </div>
 
@@ -130,13 +123,17 @@
                   <div class="swatches-grid">
                     {#each layerLegend.items as item}
                       <div class="legend-swatch-item">
-                        <div
-                          class="swatch-color"
-                          class:pattern={item.pattern === 'diagonal'}
-                          style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
-                        ></div>
+                        {#if item.image}
+                          <img class="swatch-img" src={item.image} alt={item.label} />
+                        {:else}
+                          <div
+                            class="swatch-color"
+                            class:pattern={item.pattern === 'diagonal'}
+                            style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
+                          ></div>
+                        {/if}
                         <div class="swatch-info">
-                          {#if item.code}
+                          {#if item.code && item.code !== item.label}
                             <span class="swatch-code">{item.code}</span>
                           {/if}
                           <span class="swatch-name" title={item.label}>{item.label}</span>
@@ -158,28 +155,26 @@
     <!-- ========================================================================= -->
     <div class="services-list-container">
       {#each mapStore.services as service (service.id)}
-        {@const isServiceEnabled = service.enabled !== false}
-        <div class="service-item" class:disabled={!service.visible || !isServiceEnabled} class:offline={!isServiceEnabled}>
+        <div class="service-item" class:disabled={!service.visible}>
           <label class="service-toggle">
             <input
               type="checkbox"
-              checked={service.visible && isServiceEnabled}
-              disabled={!isServiceEnabled}
+              checked={service.visible}
               onchange={() => mapStore.toggleService(service.id)}
             />
             <span class="service-name" title={service.name}>{service.name}</span>
           </label>
 
-          {#if !isServiceEnabled}
-            <button
-              type="button"
-              class="service-status-pill offline"
-              onclick={() => mapStore.toggleServiceEnabled(service.id, true)}
-              title="Service disabled. Click to re-enable."
-            >
-              Offline
-            </button>
-          {:else if service.status === 'error'}
+          {#if mapStore.isServiceLoading(service.id)}
+            <span class="service-loading-spinner" title="Loading {service.name}..." aria-label="Loading service">
+              <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+                <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+                <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+              </svg>
+            </span>
+          {/if}
+
+          {#if service.status === 'error'}
             <span class="service-status-pill error" title={service.error || 'Connection error'}>
               Error
             </span>
@@ -205,60 +200,31 @@
 
     <!-- 3. Symbology Legend Accordion -->
     <div class="legend-section">
-      <div class="legend-header-bar">
-        <button
-          class="legend-header-btn"
-          onclick={() => (legendExpanded = !legendExpanded)}
-        >
-          <div class="legend-header-left">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-            <span>MAP SYMBOLOGY LEGEND</span>
-          </div>
-          <svg
-            class="chevron"
-            class:rotated={legendExpanded}
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9"></polyline>
+      <button
+        class="legend-header-btn"
+        onclick={() => (legendExpanded = !legendExpanded)}
+      >
+        <div class="legend-header-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
           </svg>
-        </button>
-
-        {#if legendExpanded}
-          <!-- In-View vs All Dynamic Filter Toggle Pill -->
-          <div class="legend-dyn-pill">
-            <button
-              type="button"
-              class="dyn-btn"
-              class:active={mapStore.dynamicLegendEnabled}
-              onclick={() => (mapStore.dynamicLegendEnabled = true)}
-              title="Show only swatches for features in current view"
-            >
-              In View
-            </button>
-            <button
-              type="button"
-              class="dyn-btn"
-              class:active={!mapStore.dynamicLegendEnabled}
-              onclick={() => (mapStore.dynamicLegendEnabled = false)}
-              title="Show all symbology swatches"
-            >
-              All
-            </button>
-            {#if mapStore.dynamicLegendEnabled}
-              <span class="dyn-badge">{totalVisibleSwatches}</span>
-            {/if}
-          </div>
-        {/if}
-      </div>
+          <span>MAP SYMBOLOGY LEGEND</span>
+        </div>
+        <svg
+          class="chevron"
+          class:rotated={legendExpanded}
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
 
       {#if legendExpanded}
         <div class="legend-content">
@@ -269,25 +235,23 @@
           {:else}
             {#each activeLegendGroups as group (group.layerId)}
               <div class="legend-group">
-                <div class="group-title-row">
-                  <span class="group-title">{group.title}</span>
-                  {#if group.dynamic && mapStore.dynamicLegendEnabled}
-                    <span class="group-count">({group.items.length}/{group.totalItemsCount})</span>
-                  {/if}
-                </div>
                 {#if group.items.length === 0}
                   <span class="group-empty-hint">None in current extent</span>
                 {:else}
                   <div class="swatches-grid">
-                    {#each group.items as item}
+                    {#each group.items as item (item.id || item.code || item.label)}
                       <div class="legend-swatch-item">
-                        <div
-                          class="swatch-color"
-                          class:pattern={item.pattern === 'diagonal'}
-                          style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
-                        ></div>
+                        {#if item.image}
+                          <img class="swatch-img" src={item.image} alt={item.label} />
+                        {:else}
+                          <div
+                            class="swatch-color"
+                            class:pattern={item.pattern === 'diagonal'}
+                            style="background-color: {item.color}; border-color: {item.border || item.stroke || '#94a3b8'}; color: {item.border || item.stroke || '#000000'};"
+                          ></div>
+                        {/if}
                         <div class="swatch-info">
-                          {#if item.code}
+                          {#if item.code && item.code !== item.label}
                             <span class="swatch-code">{item.code}</span>
                           {/if}
                           <span class="swatch-name" title={item.label}>{item.label}</span>
@@ -371,27 +335,17 @@
     opacity: 0.55;
   }
 
-  .service-item.offline {
-    opacity: 0.45;
-    background-color: var(--bg-card-subtle);
-  }
-
   .service-status-pill {
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
     padding: 1px 5px;
     border-radius: 3px;
-    cursor: pointer;
+    cursor: default;
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
     color: var(--text-muted);
     flex-shrink: 0;
-  }
-
-  .service-status-pill.offline {
-    color: var(--text-muted);
-    border-style: dashed;
   }
 
   .service-status-pill.error {
@@ -400,44 +354,43 @@
     background-color: #fef2f2;
   }
 
-  .service-detail-actions {
-    display: flex;
-    justify-content: flex-end;
-    padding: 4px 0;
-  }
-
-  .service-kill-toggle {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    background-color: var(--bg-card);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.12s;
-  }
-
-  .service-kill-toggle:hover {
-    color: var(--text-main);
-    border-color: var(--accent-primary);
-  }
-
-  .sublayer-mute-btn {
-    font-size: 9.5px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 3px;
-    border: 1px solid var(--border-subtle);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
+  /* Busy Spinner for Loading Services & Sublayers */
+  .service-loading-spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    color: var(--accent-primary);
+    line-height: 1;
+    margin-left: auto;
   }
 
-  .sublayer-mute-btn.muted {
-    color: #ef4444;
-    border-style: dashed;
+  .site-detail-nav .service-loading-spinner {
+    margin-left: 8px;
+  }
+
+  .sublayer-item .service-loading-spinner {
+    margin-left: auto;
+    margin-right: 4px;
+  }
+
+  .spinner-icon {
+    width: 12px;
+    height: 12px;
+    animation: service-spin 0.75s linear infinite;
+  }
+
+  .spinner-track {
+    opacity: 0.25;
+  }
+
+  @keyframes service-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .site-detail-nav {
@@ -571,6 +524,13 @@
     flex-shrink: 0;
   }
 
+  .sublayer-swatch-img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
   .sublayer-actions {
     display: flex;
     align-items: center;
@@ -660,55 +620,6 @@
     flex-shrink: 0;
   }
 
-  .legend-header-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: transparent;
-  }
-
-  .legend-header-bar .legend-header-btn {
-    flex: 1;
-  }
-
-  .legend-dyn-pill {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px 4px;
-    margin-right: 8px;
-    background-color: var(--bg-subtle);
-    border: 1px solid var(--border-subtle);
-    border-radius: 4px;
-  }
-
-  .dyn-btn {
-    padding: 1px 5px;
-    font-size: 9.5px;
-    font-weight: 600;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all 0.1s ease;
-  }
-
-  .dyn-btn.active {
-    background-color: var(--bg-card);
-    color: var(--accent-primary);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  }
-
-  .dyn-badge {
-    padding: 0 4px;
-    font-size: 9px;
-    font-weight: 700;
-    background-color: var(--accent-subtle);
-    color: var(--accent-primary);
-    border-radius: 9999px;
-  }
-
   .legend-header-btn {
     width: 100%;
     display: flex;
@@ -760,12 +671,6 @@
     gap: 4px;
   }
 
-  .group-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--text-muted);
-  }
-
   .swatches-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -784,6 +689,13 @@
     height: 10px;
     border-radius: 2px;
     border: 1px solid;
+    flex-shrink: 0;
+  }
+
+  .swatch-img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
     flex-shrink: 0;
   }
 
@@ -815,18 +727,6 @@
       currentColor 2px,
       currentColor 3px
     );
-  }
-
-  .group-title-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .group-count {
-    font-size: 9px;
-    font-weight: 600;
-    color: var(--accent-primary);
   }
 
   .group-empty-hint,

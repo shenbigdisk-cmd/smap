@@ -355,7 +355,7 @@
       0 10px 25px -5px rgba(0, 0, 0, 0.25),
       0 4px 10px -2px rgba(0, 0, 0, 0.1);
     z-index: 40;
-    transform: translate(-50%, -100%) translateY(-14px);
+    transform: translate(-50%, -100%) translateY(-9px);
     pointer-events: auto;
     font-size: 12px;
     overflow: visible;
@@ -363,28 +363,33 @@
   }
 
   .identify-popup-card.flipped-bottom {
-    transform: translate(-50%, 14px);
+    transform: translate(-50%, 9px);
   }
 
-  /* Triangle Pointer Notch */
+  /* Seamless Connected Pointer Notch Handle */
   .popup-notch {
     position: absolute;
-    bottom: -8px;
+    bottom: -6px;
     left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-top: 8px solid var(--bg-card, #ffffff);
-    filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.1));
+    width: 12px;
+    height: 12px;
+    background-color: var(--bg-card, #ffffff);
+    border: none;
+    border-right: 1px solid var(--border-color, #cbd5e1);
+    border-bottom: 1px solid var(--border-color, #cbd5e1);
+    transform: translateX(-50%) rotate(45deg);
+    z-index: 50;
+    pointer-events: none;
   }
 
   .popup-notch.flipped {
     bottom: auto;
-    top: -8px;
-    border-top: none;
-    border-bottom: 8px solid var(--bg-card, #ffffff);
+    top: -6px;
+    background-color: var(--bg-card-subtle, #f8fafc);
+    border: none;
+    border-left: 1px solid var(--border-color, #cbd5e1);
+    border-top: 1px solid var(--border-color, #cbd5e1);
+    transform: translateX(-50%) rotate(45deg);
   }
 
   /* Header */

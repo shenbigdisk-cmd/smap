@@ -17,9 +17,11 @@ export interface RawServiceConfig {
   url: string
   enabled?: boolean
   visible?: boolean
+  defaultVisibility?: boolean
   opacity?: number
   description?: string
   attribution?: string
+  category?: string
   autoDiscover?: boolean
   layers?: RawLayerConfig[]
 }
@@ -37,6 +39,7 @@ export interface RawLayerConfig {
   description?: string
   enabled?: boolean
   visible?: boolean
+  defaultVisibility?: boolean
   opacity?: number
   color?: string
   minZoom?: number

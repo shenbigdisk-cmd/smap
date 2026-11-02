@@ -76,6 +76,13 @@
           <span class="header-count-badge" title="{mapStore.totalActiveServicesCount} active services">
             {mapStore.totalActiveServicesCount} active
           </span>
+        {:else if activeService && mapStore.isServiceLoading(activeService.id)}
+          <span class="service-loading-spinner" title="Loading {activeService.name}..." aria-label="Loading service">
+            <svg class="spinner-icon" viewBox="0 0 24 24" fill="none">
+              <circle class="spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"></circle>
+              <path class="spinner-head" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path>
+            </svg>
+          </span>
         {/if}
       {:else if mapStore.activeTab === 'results'}
         {#if !isFeatureDetail && activeCollection && activeCollection.totalCount > 0}
@@ -251,7 +258,7 @@
     justify-content: space-between;
     height: 44px;
     padding: 0 12px 0 14px;
-    background-color: var(--bg-card-subtle);
+    background-color: transparent;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     gap: 8px;
@@ -309,6 +316,35 @@
     padding: 1px 6px;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+
+  .service-loading-spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--accent-primary);
+    line-height: 1;
+    margin-left: 4px;
+  }
+
+  .spinner-icon {
+    width: 12px;
+    height: 12px;
+    animation: service-spin 0.75s linear infinite;
+  }
+
+  .spinner-track {
+    opacity: 0.25;
+  }
+
+  @keyframes service-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
 

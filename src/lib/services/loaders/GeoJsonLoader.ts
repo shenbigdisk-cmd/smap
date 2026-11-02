@@ -20,8 +20,12 @@ export class GeoJsonLoader implements IServiceLoader {
   async load(config: RawServiceConfig): Promise<ServiceDefinition> {
     const serviceId = config.id || `local-${Math.random().toString(36).substring(2, 9)}`
     const isEnabled = config.enabled !== false
+    const rawLayers =
+      config.layers && config.layers.length > 0
+        ? config.layers
+        : [{ id: `${serviceId}-layer-0`, title: config.name || 'GeoJSON Layer' }]
 
-    const layers: ServiceLayer[] = (config.layers || []).map((raw, idx) => {
+    const layers: ServiceLayer[] = rawLayers.map((raw, idx) => {
       const layerId = raw.id || `${serviceId}-layer-${idx}`
       const geomType = raw.geometryType || 'polygon'
       const color = raw.color || '#3b82f6'
@@ -89,7 +93,7 @@ export class GeoJsonLoader implements IServiceLoader {
       url: config.url,
       enabled: isEnabled,
       visible: config.visible ?? true,
-      status: isEnabled ? 'ready' : 'offline',
+      status: 'ready',
       opacity: config.opacity ?? 0.8,
       description: config.description,
       attribution: config.attribution,

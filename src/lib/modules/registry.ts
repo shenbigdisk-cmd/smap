@@ -11,11 +11,13 @@ import {
   MarkupModuleDef,
   BookmarksModuleDef,
   PrintModuleDef,
-  ToolboxModuleDef
+  ToolboxModuleDef,
+  AiAssistantModuleDef
 } from './definitions'
 
 // Concrete module singletons inheriting from ModuleBase
 export const workflowsModule = new WorkflowsModuleDef()
+export const aiAssistantModule = new AiAssistantModuleDef()
 export const layersModule = new LayersModuleDef()
 export const queryModule = new QueryModuleDef()
 export const resultsModule = new ResultsModuleDef()
@@ -29,6 +31,7 @@ export const toolboxModule = new ToolboxModuleDef()
 // Register all system modules with the ModuleManager
 moduleManager.registerAll([
   workflowsModule,
+  aiAssistantModule,
   layersModule,
   queryModule,
   resultsModule,
@@ -46,6 +49,7 @@ moduleManager.registerAll([
  */
 export const INITIAL_MODULES: WebGISModule[] = [
   workflowsModule.toWebGISModule(),
+  aiAssistantModule.toWebGISModule(),
   layersModule.toWebGISModule(),
   queryModule.toWebGISModule(),
   resultsModule.toWebGISModule(),

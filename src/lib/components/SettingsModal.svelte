@@ -1,11 +1,12 @@
 <script lang="ts">
   import { mapStore } from '../stores/mapStore.svelte'
   import { ModuleIcon } from '../modules'
+  import { aiService } from '../services/ai/aiService.svelte'
   import type { AppTheme } from '../types'
 
   let s = $derived(mapStore.settings)
 
-  type SettingsCategory = 'layout' | 'modules' | 'theme' | 'map'
+  type SettingsCategory = 'layout' | 'modules' | 'theme' | 'map' | 'ai'
   let activeSection = $state<SettingsCategory>('layout')
 
   interface ThemeOption {
@@ -279,6 +280,18 @@
                 <line x1="16" y1="6" x2="16" y2="22"></line>
               </svg>
               <span class="nav-label">Map & 3D</span>
+            </button>
+
+            <button
+              type="button"
+              class="nav-item"
+              class:active={activeSection === 'ai'}
+              onclick={() => (activeSection = 'ai')}
+            >
+              <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path>
+              </svg>
+              <span class="nav-label">AI Assistant</span>
             </button>
           </nav>
         </aside>
@@ -558,6 +571,94 @@
                     <span class="slider-round"></span>
                   </label>
                 </div>
+              </div>
+            </section>
+          {:else if activeSection === 'ai'}
+            <section class="section-pane">
+              <div class="pane-header-block">
+                <h3 class="pane-title">AI Assistant & Provider</h3>
+              </div>
+
+              <div class="card-setting-box">
+                <div class="form-row">
+                  <div class="row-label-group">
+                    <label for="ai-provider" class="row-label">Intelligence Provider</label>
+                  </div>
+                  <select
+                    id="ai-provider"
+                    class="styled-select"
+                    value={aiService.config.provider}
+                    onchange={(e) => aiService.saveConfig({ provider: (e.target as HTMLSelectElement).value as any })}
+                  >
+                    <option value="gemini">Google Gemini (Cloud AI)</option>
+                    <option value="built-in">Built-in Spatial Agent (Zero Setup / Offline)</option>
+                    <option value="ollama">Ollama (Local LLM)</option>
+                    <option value="openai-compatible">OpenAI-Compatible Local Endpoint</option>
+                  </select>
+                </div>
+
+                {#if aiService.config.provider === 'gemini'}
+                  <div class="form-row">
+                    <div class="row-label-group">
+                      <label for="gemini-key" class="row-label">Gemini API Key</label>
+                    </div>
+                    <input
+                      id="gemini-key"
+                      type="password"
+                      class="styled-input"
+                      value={aiService.config.geminiApiKey || ''}
+                      oninput={(e) => aiService.saveConfig({ geminiApiKey: (e.target as HTMLInputElement).value })}
+                      placeholder="Enter Gemini API key"
+                    />
+                  </div>
+
+                  <div class="form-row">
+                    <div class="row-label-group">
+                      <label for="gemini-model" class="row-label">Gemini Model</label>
+                    </div>
+                    <select
+                      id="gemini-model"
+                      class="styled-select"
+                      value={aiService.config.geminiModel || 'gemini-2.5-flash'}
+                      onchange={(e) => aiService.saveConfig({ geminiModel: (e.target as HTMLSelectElement).value })}
+                    >
+                      <option value="gemini-2.5-flash">gemini-2.5-flash (Fast & Accurate)</option>
+                      <option value="gemini-flash-latest">gemini-flash-latest</option>
+                      <option value="gemini-2.5-pro">gemini-2.5-pro (Deep Reasoning)</option>
+                      <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Ultra Fast)</option>
+                    </select>
+                  </div>
+                {/if}
+
+                {#if aiService.config.provider === 'ollama' || aiService.config.provider === 'openai-compatible'}
+                  <div class="form-row">
+                    <div class="row-label-group">
+                      <label for="ai-endpoint" class="row-label">Endpoint Host</label>
+                    </div>
+                    <input
+                      id="ai-endpoint"
+                      type="text"
+                      class="styled-input"
+                      value={aiService.config.endpoint}
+                      oninput={(e) => aiService.saveConfig({ endpoint: (e.target as HTMLInputElement).value })}
+                      placeholder="http://localhost:11434"
+                    />
+                  </div>
+
+                  <div class="form-row">
+                    <div class="row-label-group">
+                      <label for="ai-model" class="row-label">Model Name</label>
+                    </div>
+                    <input
+                      id="ai-model"
+                      type="text"
+                      class="styled-input"
+                      value={aiService.config.model}
+                      oninput={(e) => aiService.saveConfig({ model: (e.target as HTMLInputElement).value })}
+                      placeholder="llama3.2"
+                    />
+                  </div>
+                {/if}
               </div>
             </section>
           {/if}
@@ -1205,7 +1306,8 @@
     padding: 8px 0;
   }
 
-  .styled-select {
+  .styled-select,
+  .styled-input {
     padding: 4px 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -1213,9 +1315,13 @@
     color: var(--text-main);
     background-color: var(--bg-input);
     outline: none;
+    font-family: inherit;
+    box-sizing: border-box;
+    width: 220px;
   }
 
-  .styled-select:focus {
+  .styled-select:focus,
+  .styled-input:focus {
     border-color: var(--accent-primary);
   }
 

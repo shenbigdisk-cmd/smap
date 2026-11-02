@@ -26,7 +26,15 @@
 
   $effect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (isOpen && menuContainerEl && !menuContainerEl.contains(e.target as Node)) {
+      const target = e.target as Node | null
+      const path = e.composedPath ? e.composedPath() : []
+      if (
+        isOpen &&
+        menuContainerEl &&
+        target &&
+        !menuContainerEl.contains(target) &&
+        !path.includes(menuContainerEl)
+      ) {
         isOpen = false
       }
     }
@@ -45,7 +53,10 @@
     }
   })
 
-  function toggleMenu() {
+  function toggleMenu(e?: MouseEvent) {
+    if (e) {
+      e.stopPropagation()
+    }
     isOpen = !isOpen
   }
 
@@ -279,6 +290,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    pointer-events: auto;
   }
 
   /* Circular Avatar Button */
@@ -287,7 +299,7 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background-color: var(--bg-card-subtle, rgba(255, 255, 255, 0.1));
+    background-color: var(--bg-card, #ffffff);
     border: 1.5px solid var(--border-color, rgba(255, 255, 255, 0.2));
     color: var(--text-main, #0f172a);
     display: flex;
@@ -296,7 +308,7 @@
     cursor: pointer;
     padding: 0;
     transition: all 0.15s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: none;
   }
 
   /* Support inside headers & rails across all light and dark themes */
@@ -372,12 +384,14 @@
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
     z-index: 1000;
     overflow: hidden;
+    pointer-events: auto;
   }
 
   /* Default top-right placement (Header top-right) */
   .avatar-dropdown.top-right {
     top: calc(100% + 8px);
     right: 0;
+    left: auto;
     animation: dropdownSlideIn 0.15s ease-out;
   }
 
@@ -393,7 +407,7 @@
   /* bottom-right placement (Compact Floating Search bar) */
   .avatar-dropdown.bottom-right {
     top: calc(100% + 8px);
-    left: 0;
+    left: -8px;
     right: auto;
     animation: dropdownSlideIn 0.15s ease-out;
   }
@@ -426,7 +440,7 @@
     align-items: center;
     gap: 12px;
     padding: 12px 14px 10px 14px;
-    background-color: var(--bg-card-subtle, #f8fafc);
+    background-color: var(--bg-card, #ffffff);
   }
 
   .profile-avatar-large {
@@ -686,9 +700,15 @@
   }
 
   @media (max-width: 768px) {
-    .avatar-dropdown {
+    .avatar-dropdown.top-right {
       right: 0 !important;
       left: auto !important;
+      max-width: calc(100vw - 24px) !important;
+    }
+
+    .avatar-dropdown.bottom-right {
+      left: -8px !important;
+      right: auto !important;
       max-width: calc(100vw - 24px) !important;
     }
   }

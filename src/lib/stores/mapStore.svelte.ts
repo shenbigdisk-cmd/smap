@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { TerraDraw } from 'terra-draw'
-import { MAP_CONFIG } from '../config/map.config'
+import { MAP_CONFIG, loadAppConfig, createRasterBasemapStyle, type AppConfig } from '../config/map.config'
 import {
   BUILDINGS_3D_GEOJSON,
   DEFAULT_BOOKMARKS,
@@ -13,6 +13,7 @@ import {
 } from '../data/sampleData'
 import { dataAdapterRegistry } from '../services/adapters/DataAdapterRegistry'
 import { legendService } from '../services/legendService'
+import { searchEngine } from '../services/search'
 import { localDbGet, localDbSet } from '../services/localDb'
 import { persistenceEngine } from '../services/persistence'
 import type {
@@ -48,7 +49,7 @@ import {
 } from '../utils/geodesy'
 import { INITIAL_MODULES, INITIAL_VIEWS, moduleManager } from '../modules/registry'
 import { serviceLoaderRegistry, type RawServiceConfig } from '../services/loaders'
-import { executePrint, PAPER_DIMENSIONS_MM, type PrintConfig } from '../utils/printMap'
+import { executePrint, getPrintLayoutGeometry, PAPER_DIMENSIONS_MM, type PrintConfig } from '../utils/printMap'
 
 const DEFAULT_PRINT_SETTINGS: UserPrintSettings = {
   paperSize: 'a4',
@@ -59,7 +60,6 @@ const DEFAULT_PRINT_SETTINGS: UserPrintSettings = {
   showNorthArrow: true,
   showCoordinates: true,
   showLegend: true,
-  dynamicLegend: true,
   showPrintFrame: true
 }
 
@@ -101,9 +101,15 @@ class MapStore {
   currentZoom = $state<number>(14.8)
   is3dActive = $state(false)
 
+  // Application Branding
+  appTitle = $state(MAP_CONFIG.title)
+  appSubtitle = $state(MAP_CONFIG.subtitle)
+
   // Services & Operational Layers State
-  services = $state<ServiceDefinition[]>([...MAP_CONFIG.services.map((s) => ({ ...s }))])
-  layers = $state<OperationalLayer[]>([...MAP_CONFIG.operationalLayers.map((l) => ({ ...l }))])
+  services = $state<ServiceDefinition[]>([...MAP_CONFIG.services])
+  layers = $state<OperationalLayer[]>([...MAP_CONFIG.services.flatMap((s) => s.layers)])
+  loadingServiceIds = $state<Record<string, boolean>>({})
+  loadingLayerIds = $state<Record<string, boolean>>({})
 
   // Selected Features
   selectedParcel = $state<ParcelFeature | null>(null)
@@ -113,6 +119,8 @@ class MapStore {
   searchQuery = $state('')
   searchResults = $state<SearchResult[]>([])
   searchFocused = $state(false)
+  activeSearchPin = $state<[number, number] | null>(null)
+  private searchDebounceTimer: any = null
 
   // Measurement State
   measurement = $state<MeasurementState>({
@@ -131,7 +139,6 @@ class MapStore {
 
   // Dynamic Viewport & Legend Tracking
   viewportVersion = $state(0)
-  dynamicLegendEnabled = $state(true)
 
   // Buffer State (for selected parcel)
   bufferState = $state<BufferState>({
@@ -183,10 +190,13 @@ class MapStore {
   isQuickPrinting = $state<boolean>(false)
 
   get printAspectRatio(): number {
-    const [pW, pH] = PAPER_DIMENSIONS_MM[this.printSettings.paperSize] || [210, 297]
-    const widthMm = this.printSettings.orientation === 'landscape' ? pH : pW
-    const heightMm = this.printSettings.orientation === 'landscape' ? pW : pH
-    return widthMm / heightMm
+    const geom = getPrintLayoutGeometry(
+      this.printSettings.paperSize,
+      this.printSettings.orientation,
+      this.printSettings.dpi,
+      this.printSettings.showLegend
+    )
+    return geom.mapAspectRatio
   }
 
   get isPrintModuleActive(): boolean {
@@ -283,6 +293,11 @@ class MapStore {
     }
 
     this.initMobileDetection()
+    // Initialize search providers if configured
+    if (MAP_CONFIG.search && Array.isArray((MAP_CONFIG.search as any).providers)) {
+      searchEngine.initFromConfig((MAP_CONFIG.search as any).providers)
+    }
+
     this.hydratePersistedStateSync()
     this.initGeoJsonAdapter()
     this.loadPersistedState()
@@ -293,6 +308,7 @@ class MapStore {
     this.loadSettings()
     this.loadPrintSettings()
     this.loadToolboxPreference()
+    this.initServices()
   }
 
   private initGeoJsonAdapter() {
@@ -322,6 +338,40 @@ class MapStore {
     )
   }
 
+  private async initServices() {
+    for (const srv of this.services) {
+      if (srv.type === 'esri-rest' && srv.enabled !== false && srv.url) {
+        srv.status = 'loading'
+        try {
+          const fresh = await serviceLoaderRegistry.loadService({
+            id: srv.id,
+            name: srv.name,
+            type: 'esri-rest',
+            url: srv.url,
+            category: srv.category,
+            enabled: srv.enabled,
+            visible: srv.visible,
+            layers: srv.layers
+          })
+          if (fresh.layers.length > srv.layers.length) {
+            for (const newLayer of fresh.layers) {
+              if (!srv.layers.some((l) => l.id === newLayer.id)) {
+                srv.layers.push(newLayer)
+                if (!this.layers.some((l) => l.id === newLayer.id)) {
+                  this.layers.push(newLayer)
+                }
+              }
+            }
+          }
+          srv.status = 'ready'
+        } catch {
+          // Gracefully continue; pre-configured layers remain intact
+          srv.status = 'ready'
+        }
+      }
+    }
+  }
+
   private initMobileDetection() {
     if (typeof window === 'undefined') return
     const mq = window.matchMedia('(max-width: 768px)')
@@ -331,11 +381,33 @@ class MapStore {
     })
   }
 
-  // Query layer effective visibility (both enabled AND visible)
-  isLayerVisible(layerId: string): boolean {
-    const layer = this.layers.find((l) => l.id === layerId)
-    if (!layer) return true
-    return layer.enabled !== false && layer.visible
+  // Query layer effective visibility (both enabled AND visible, and parent service visible)
+  isLayerVisible(layerOrId: OperationalLayer | string): boolean {
+    const layer =
+      typeof layerOrId === 'string'
+        ? this.layers.find((l) => l.id === layerOrId)
+        : layerOrId
+
+    if (!layer) return false
+    if (layer.enabled === false || !layer.visible) return false
+
+    // If layer belongs to a service, the service must be visible
+    const service = layer.serviceId
+      ? this.services.find((s) => s.id === layer.serviceId)
+      : this.services.find((s) => s.layers.some((l) => l.id === layer.id))
+
+    if (service) {
+      if (service.enabled === false || !service.visible) {
+        return false
+      }
+    }
+
+    // Special check for 3D buildings layer: only visible when in 3D mode
+    if (layer.id === 'layer-buildings-3d' && !this.is3dActive) {
+      return false
+    }
+
+    return true
   }
 
   /**
@@ -354,13 +426,25 @@ class MapStore {
             s.opacity = data.services[s.id].opacity ?? s.opacity
             if (data.services[s.id].enabled !== undefined) {
               s.enabled = data.services[s.id].enabled
-              s.status = s.enabled ? 'ready' : 'offline'
             }
           }
         }
       }
       if (data.layers) {
+        for (const s of this.services) {
+          for (const l of s.layers) {
+            if (l.enabled === false) continue
+            if (data.layers[l.id]) {
+              l.visible = data.layers[l.id].visible ?? l.visible
+              l.opacity = data.layers[l.id].opacity ?? l.opacity
+              if (data.layers[l.id].enabled !== undefined) {
+                l.enabled = data.layers[l.id].enabled
+              }
+            }
+          }
+        }
         for (const l of this.layers) {
+          if (l.enabled === false) continue
           if (data.layers[l.id]) {
             l.visible = data.layers[l.id].visible ?? l.visible
             l.opacity = data.layers[l.id].opacity ?? l.opacity
@@ -389,7 +473,14 @@ class MapStore {
   // Set Map instance
   setMap(instance: MapLibreMap) {
     this.map = instance
+    if (typeof window !== 'undefined') {
+      ;(window as any).__mapStore = this
+      ;(window as any).__map = instance
+    }
     this.apply2D3DMode()
+    legendService.onInViewUpdated(() => {
+      this.viewportVersion++
+    })
     moduleManager.initialize({
       getMap: () => this.map,
       registerMapHandler: (handler) => this.registerMapHandler(handler),
@@ -448,12 +539,22 @@ class MapStore {
               s.opacity = data.services[s.id].opacity ?? s.opacity
               if (data.services[s.id].enabled !== undefined) {
                 s.enabled = data.services[s.id].enabled
-                s.status = s.enabled ? 'ready' : 'offline'
               }
             }
           }
         }
         if (data.layers) {
+          for (const s of this.services) {
+            for (const l of s.layers) {
+              if (data.layers[l.id]) {
+                l.visible = data.layers[l.id].visible ?? l.visible
+                l.opacity = data.layers[l.id].opacity ?? l.opacity
+                if (data.layers[l.id].enabled !== undefined) {
+                  l.enabled = data.layers[l.id].enabled
+                }
+              }
+            }
+          }
           for (const l of this.layers) {
             if (data.layers[l.id]) {
               l.visible = data.layers[l.id].visible ?? l.visible
@@ -593,18 +694,55 @@ class MapStore {
         ? `VicPlan - ${this.selectedParcel.address}`
         : 'VicPlan Statewide Planning Scheme Map'
 
-      const useDynamic = this.printSettings.dynamicLegend ?? true
+      const geom = getPrintLayoutGeometry(
+        this.printSettings.paperSize,
+        this.printSettings.orientation,
+        this.printSettings.dpi,
+        this.printSettings.showLegend
+      )
       const container = this.map.getContainer()
-      const viewportBox =
-        padLeft > 0
-          ? ([[padLeft, 0], [container.clientWidth, container.clientHeight]] as [
-              [number, number],
-              [number, number]
-            ])
-          : undefined
+      const containerRect = container.getBoundingClientRect()
+      const availWidth = Math.max(100, container.clientWidth - padLeft)
+      const availHeight = container.clientHeight
+      const boxCenterX = padLeft + availWidth / 2
+      const boxCenterY = availHeight / 2
+
+      const maxBoxW = availWidth * 0.85
+      const maxBoxH = availHeight * 0.85
+      let boxW = maxBoxW
+      let boxH = maxBoxW / geom.mapAspectRatio
+      if (boxH > maxBoxH) {
+        boxH = maxBoxH
+        boxW = maxBoxH * geom.mapAspectRatio
+      }
+
+      const frameEl = typeof document !== 'undefined' ? document.querySelector('.print-frame-box') : null
+      let frameMinX = boxCenterX - boxW / 2
+      let frameMaxX = boxCenterX + boxW / 2
+      let frameMinY = boxCenterY - boxH / 2
+      let frameMaxY = boxCenterY + boxH / 2
+      if (frameEl) {
+        const r = frameEl.getBoundingClientRect()
+        if (r.width > 50 && r.height > 50) {
+          frameMinX = r.left - containerRect.left
+          frameMaxX = r.right - containerRect.left
+          frameMinY = r.top - containerRect.top
+          frameMaxY = r.bottom - containerRect.top
+        }
+      }
+
+      const printViewportBox: [[number, number], [number, number]] = [
+        [frameMinX, frameMinY],
+        [frameMaxX, frameMaxY]
+      ]
 
       const legendGroups = this.printSettings.showLegend
-        ? legendService.getAllActiveLegendGroups(this.layers, this.map, !useDynamic, viewportBox)
+        ? await legendService.getAllActiveLegendGroupsAsync(
+            this.layers,
+            this.map,
+            printViewportBox,
+            (l) => this.isLayerVisible(l)
+          )
         : undefined
 
       const config: PrintConfig = {
@@ -617,7 +755,6 @@ class MapStore {
         showNorthArrow: this.printSettings.showNorthArrow,
         showCoordinates: this.printSettings.showCoordinates,
         showLegend: this.printSettings.showLegend,
-        dynamicLegend: useDynamic,
         legendGroups,
         padLeft
       }
@@ -753,7 +890,7 @@ class MapStore {
       console.error('Error during handler deactivation:', err)
     }
     if (this.map) {
-      this.map.getCanvas().style.cursor = ''
+      this.map.getCanvas().style.cursor = 'default'
     }
   }
 
@@ -1330,32 +1467,16 @@ class MapStore {
     const basemap = MAP_CONFIG.basemaps.find((b) => b.id === id)
     if (!basemap) return
 
-    if (basemap.styleUrl) {
+    const tiles = basemap.tiles || basemap.rasterTiles
+    if (basemap.styleUrl && (basemap.styleUrl.startsWith('http://') || basemap.styleUrl.startsWith('https://') || basemap.styleUrl.endsWith('.json'))) {
       this.map.setStyle(basemap.styleUrl, { diff: false })
-    } else if (basemap.rasterTiles) {
+    } else if (tiles && tiles.length > 0) {
       this.map.setStyle(
-        {
-          version: 8,
-          sources: {
-            'raster-tiles': {
-              type: 'raster',
-              tiles: basemap.rasterTiles,
-              tileSize: 256,
-              attribution: basemap.attribution
-            }
-          },
-          layers: [
-            {
-              id: 'raster-layer',
-              type: 'raster',
-              source: 'raster-tiles',
-              minzoom: 0,
-              maxzoom: 22
-            }
-          ]
-        },
+        createRasterBasemapStyle(tiles, basemap.attribution) as any,
         { diff: false }
       )
+    } else if (basemap.style && typeof basemap.style === 'object') {
+      this.map.setStyle(basemap.style, { diff: false })
     }
   }
 
@@ -1415,7 +1536,7 @@ class MapStore {
     if (srv) {
       const nextEnabled = enabled !== undefined ? enabled : !(srv.enabled !== false)
       srv.enabled = nextEnabled
-      srv.status = nextEnabled ? 'ready' : 'offline'
+      srv.status = srv.status === 'error' ? 'error' : 'ready'
       if (!nextEnabled) {
         srv.visible = false
       }
@@ -1483,22 +1604,99 @@ class MapStore {
     return service
   }
 
+  initFromConfig(config: AppConfig) {
+    this.appTitle = config.title
+    this.appSubtitle = config.subtitle
+    this.services = [...config.services]
+    this.layers = this.services.flatMap((s) => s.layers)
+
+    // Module filtering: If config.modules is provided as an array of IDs, only enable those modules
+    if (Array.isArray(config.modules) && config.modules.length > 0) {
+      const allowedModuleIds = new Set(
+        config.modules.map((m: any) => (typeof m === 'string' ? m : m.id))
+      )
+      this.modules = INITIAL_MODULES.filter((m) => allowedModuleIds.has(m.id)).map((m) => ({ ...m }))
+      this.views = INITIAL_VIEWS.filter((v) => allowedModuleIds.has(v.moduleId || v.id)).map((v) => ({ ...v }))
+      if (!this.views.some((v) => v.id === this.activeTab)) {
+        this.activeTab = (this.views[0]?.id || 'layers') as any
+      }
+    }
+
+    // Basemap: By default the first basemap is selected, then use user-selected (persisted)
+    const savedBasemap = persistenceEngine.get<string>('smap_last_basemap')
+    if (savedBasemap && config.basemaps.some((b) => b.id === savedBasemap)) {
+      this.activeBasemapId = savedBasemap as BasemapId
+    } else if (config.basemaps.length > 0) {
+      this.activeBasemapId = config.basemaps[0].id as BasemapId
+    }
+
+    // Initialize search providers if configured
+    if (config.search && Array.isArray((config.search as any).providers)) {
+      searchEngine.initFromConfig((config.search as any).providers)
+    }
+
+    this.hydratePersistedStateSync()
+    this.saveLayerStates()
+    this.viewportVersion++
+  }
+
+  async reloadConfig() {
+    const config = await loadAppConfig('/config.json')
+    this.initFromConfig(config)
+  }
+
   toggleService(serviceId: string) {
     const srv = this.services.find((s) => s.id === serviceId)
     if (srv) {
-      if (srv.enabled === false) {
-        // Re-enable service if clicked while disabled
-        this.toggleServiceEnabled(serviceId, true)
-        return
+      const nextVisible = !srv.visible
+      srv.visible = nextVisible
+      srv.enabled = true
+
+      if (nextVisible) {
+        // Turning service ON:
+        // If all sublayers are currently off, apply default visibility
+        const anySublayerOn = srv.layers.some((l) => l.visible)
+        if (!anySublayerOn) {
+          const defaultActive = srv.layers.filter((l) => l.defaultVisibility === true)
+          if (defaultActive.length > 0) {
+            for (const layer of srv.layers) {
+              const shouldBeVisible = layer.defaultVisibility === true
+              layer.visible = shouldBeVisible
+              layer.enabled = shouldBeVisible
+              const globalLayer = this.layers.find((l) => l.id === layer.id)
+              if (globalLayer) {
+                globalLayer.visible = shouldBeVisible
+                globalLayer.enabled = shouldBeVisible
+              }
+              this.updateMapLayerVisibility(layer)
+            }
+          } else if (srv.layers.length > 0) {
+            srv.layers[0].visible = true
+            srv.layers[0].enabled = true
+            const globalLayer = this.layers.find((l) => l.id === srv.layers[0].id)
+            if (globalLayer) {
+              globalLayer.visible = true
+              globalLayer.enabled = true
+            }
+            this.updateMapLayerVisibility(srv.layers[0])
+          }
+        } else {
+          for (const layer of srv.layers) {
+            this.updateMapLayerVisibility(layer)
+          }
+        }
+      } else {
+        // Turning service OFF:
+        this.setServiceLoading(serviceId, false)
+        for (const layer of srv.layers) {
+          this.setLayerLoading(layer.id, false)
+          this.updateMapLayerVisibility(layer)
+        }
       }
-      srv.visible = !srv.visible
-      for (const layer of srv.layers) {
-        layer.visible = srv.visible
-        const globalLayer = this.layers.find((l) => l.id === layer.id)
-        if (globalLayer) globalLayer.visible = srv.visible
-        this.updateMapLayerVisibility(layer)
-      }
+
+      this.syncDynamicServiceLayers()
       this.saveLayerStates()
+      this.viewportVersion++
     }
   }
 
@@ -1517,23 +1715,122 @@ class MapStore {
   }
 
   toggleLayer(layerId: string) {
-    const layer = this.layers.find((l) => l.id === layerId)
-    if (layer) {
-      if (layer.enabled === false) {
-        this.toggleLayerEnabled(layerId, true)
-        return
+    let layer = this.layers.find((l) => l.id === layerId)
+    for (const s of this.services) {
+      const sl = s.layers.find((l) => l.id === layerId)
+      if (sl) {
+        if (!layer) layer = sl
+        break
       }
-      layer.visible = !layer.visible
+    }
+    if (layer) {
+      const nextVisible = !layer.visible
+      layer.visible = nextVisible
+      layer.enabled = true
+      if (!nextVisible) {
+        this.setLayerLoading(layerId, false)
+      }
       for (const s of this.services) {
         const sl = s.layers.find((l) => l.id === layerId)
         if (sl) {
-          sl.visible = layer.visible
+          sl.visible = nextVisible
+          sl.enabled = true
+          // If all sublayers are turned off, turn off the service; otherwise keep it on
           s.visible = s.layers.some((l) => l.visible)
+          s.enabled = true
         }
       }
+      const globalLayer = this.layers.find((l) => l.id === layerId)
+      if (globalLayer && globalLayer !== layer) {
+        globalLayer.visible = nextVisible
+        globalLayer.enabled = true
+      }
       this.updateMapLayerVisibility(layer)
+      this.syncDynamicServiceLayers()
       this.saveLayerStates()
+      this.viewportVersion++
     }
+  }
+
+  // Service & Layer Loading State Helpers
+  setServiceLoading(serviceId: string, isLoading: boolean) {
+    if (this.loadingServiceIds[serviceId] !== isLoading) {
+      this.loadingServiceIds[serviceId] = isLoading
+    }
+  }
+
+  setLayerLoading(layerId: string, isLoading: boolean) {
+    if (this.loadingLayerIds[layerId] !== isLoading) {
+      this.loadingLayerIds[layerId] = isLoading
+    }
+  }
+
+  isServiceLoading(serviceId: string): boolean {
+    const srv = this.services.find((s) => s.id === serviceId)
+    if (srv?.status === 'loading') return true
+    if (this.loadingServiceIds[serviceId]) return true
+    if (srv) {
+      for (const l of srv.layers) {
+        if (this.loadingLayerIds[l.id]) return true
+      }
+    }
+    return false
+  }
+
+  isLayerLoading(layerId: string): boolean {
+    return Boolean(this.loadingLayerIds[layerId])
+  }
+
+  clearAllSourceLoading() {
+    for (const k in this.loadingServiceIds) {
+      if (this.loadingServiceIds[k]) {
+        this.loadingServiceIds[k] = false
+      }
+    }
+    for (const k in this.loadingLayerIds) {
+      if (this.loadingLayerIds[k]) {
+        this.loadingLayerIds[k] = false
+      }
+    }
+  }
+
+  resolveServiceIdForSource(sourceId: string): string | null {
+    if (!sourceId) return null
+    if (sourceId.startsWith('src-esri-')) {
+      const key = sourceId.slice(9)
+      const direct = this.services.find((s) => s.id === key)
+      if (direct) return direct.id
+      const byUrl = this.services.find(
+        (s) =>
+          s.url &&
+          s.url.replace(/\/(export|\d+)\/?$/, '').replace(/\/+$/, '') === key
+      )
+      if (byUrl) return byUrl.id
+    }
+    if (sourceId.startsWith('src-')) {
+      const layerId = sourceId.slice(4)
+      const layer = this.layers.find((l) => l.id === layerId)
+      if (layer?.serviceId) return layer.serviceId
+      const parentSrv = this.services.find((s) => s.layers.some((l) => l.id === layerId))
+      if (parentSrv) return parentSrv.id
+    }
+    if (sourceId === 'parcels-source') return 'service-cadastre'
+    if (sourceId === 'lga-source') return 'service-vic-boundaries'
+    const directSrv = this.services.find((s) => s.id === sourceId)
+    if (directSrv) return directSrv.id
+    const srvWithLayer = this.services.find((s) => s.layers.some((l) => l.id === sourceId))
+    if (srvWithLayer) return srvWithLayer.id
+    return null
+  }
+
+  resolveLayerIdForSource(sourceId: string): string | null {
+    if (!sourceId) return null
+    if (sourceId.startsWith('src-') && !sourceId.startsWith('src-esri-')) {
+      return sourceId.slice(4)
+    }
+    if (sourceId === 'parcels-source') return 'layer-parcels'
+    if (sourceId === 'lga-source') return 'layer-lga'
+    return null
   }
 
   setLayerOpacity(layerId: string, opacity: number) {
@@ -1554,11 +1851,12 @@ class MapStore {
 
     // Find all currently visible and enabled layers that support identify
     const visibleIdentifyLayers = this.layers.filter(
-      (l) => l.enabled !== false && l.visible && (l.capabilities?.identify ?? l.operations?.includes('identify') ?? true)
+      (l) => this.isLayerVisible(l) && (l.capabilities?.identify ?? l.operations?.includes('identify') ?? true)
     )
 
     if (visibleIdentifyLayers.length === 0) {
       this.identifyPopupOpen = false
+      this.clearIdentifyResults()
       return
     }
 
@@ -1681,7 +1979,7 @@ class MapStore {
 
   updateMapLayerVisibility(layer: OperationalLayer) {
     if (!this.map) return
-    const isVisible = layer.enabled !== false && layer.visible
+    const isVisible = this.isLayerVisible(layer)
     const visibility = isVisible ? 'visible' : 'none'
     const mapLayerIds = [
       layer.id,
@@ -1691,6 +1989,12 @@ class MapStore {
     ]
     if (layer.id === 'layer-buildings-3d') {
       mapLayerIds.push('layer-3d-buildings')
+    }
+    if (layer.id === 'layer-transport') {
+      mapLayerIds.push('layer-transport-line')
+    }
+    if (layer.id === 'layer-lga') {
+      mapLayerIds.push('layer-lga-line')
     }
     for (const id of mapLayerIds) {
       if (this.map.getLayer(id)) {
@@ -1709,6 +2013,12 @@ class MapStore {
     const ids = [layer.id, `${layer.id}-fill`, `${layer.id}-line`, `${layer.id}-outline`]
     if (layer.id === 'layer-buildings-3d') {
       ids.push('layer-3d-buildings')
+    }
+    if (layer.id === 'layer-transport') {
+      ids.push('layer-transport-line')
+    }
+    if (layer.id === 'layer-lga') {
+      ids.push('layer-lga-line')
     }
     for (const id of ids) {
       const lyr = this.map.getLayer(id)
@@ -1738,10 +2048,18 @@ class MapStore {
       this.updateMapLayerVisibility(layer)
       this.updateMapLayerOpacity(layer)
     }
+    if (this.map.getLayer('layer-lga-line')) {
+      const lgaVis = this.isLayerVisible('layer-lga') ? 'visible' : 'none'
+      this.map.setLayoutProperty('layer-lga-line', 'visibility', lgaVis)
+    }
+    if (this.map.getLayer('layer-3d-buildings')) {
+      const b3dVis = this.isLayerVisible('layer-buildings-3d') ? 'visible' : 'none'
+      this.map.setLayoutProperty('layer-3d-buildings', 'visibility', b3dVis)
+    }
   }
 
   // Feature Selection
-  selectParcel(parcel: ParcelFeature) {
+  selectParcel(parcel: ParcelFeature, switchToResults = true) {
     this.selectedParcel = parcel
     this.inspectedFeature = {
       id: parcel.id,
@@ -1753,7 +2071,9 @@ class MapStore {
       properties: { ...parcel }
     }
     this.featuresViewMode = 'detail'
-    this.activeTab = 'results'
+    if (switchToResults) {
+      this.activeTab = 'results'
+    }
     this.sidebarOpen = true
     this.saveSidebarState()
     if (this.isMobile) {
@@ -1822,15 +2142,17 @@ class MapStore {
     this.searchQuery = query
     if (!query.trim()) {
       this.searchResults = []
+      this.activeSearchPin = null
+      searchEngine.cancelInFlight()
+      searchEngine.results = []
       return
     }
 
-    const q = query.toLowerCase()
-    this.searchResults = SEARCH_INDEX.filter(
-      (item) =>
-        item.title.toLowerCase().includes(q) ||
-        item.subtitle.toLowerCase().includes(q)
-    ).slice(0, 8)
+    clearTimeout(this.searchDebounceTimer)
+    this.searchDebounceTimer = setTimeout(async () => {
+      const results = await searchEngine.search(query)
+      this.searchResults = results
+    }, 200)
   }
 
   selectSearchResult(result: SearchResult) {
@@ -1839,13 +2161,32 @@ class MapStore {
 
     if (result.parcelId) {
       this.selectParcelById(result.parcelId)
+      this.activeSearchPin = null
+    } else if (result.extent && this.map) {
+      this.activeSearchPin = result.center
+      this.map.fitBounds(
+        [
+          [result.extent[0], result.extent[1]],
+          [result.extent[2], result.extent[3]]
+        ],
+        { padding: 80, maxZoom: 18, duration: 800 }
+      )
     } else if (this.map) {
+      this.activeSearchPin = result.center
       this.map.flyTo({
         center: result.center,
-        zoom: result.zoom || 15,
+        zoom: result.zoom || 17.5,
         essential: true
       })
     }
+  }
+
+  clearSearch() {
+    this.searchQuery = ''
+    this.searchResults = []
+    this.activeSearchPin = null
+    searchEngine.cancelInFlight()
+    searchEngine.results = []
   }
 
   // Navigation Shortcuts
