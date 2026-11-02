@@ -492,4 +492,29 @@
     display: flex;
     flex-direction: column;
   }
+
+  /* Compact Card Layout Overrides: ensure layer/service lists do not collapse in auto-height mode */
+  .compact-panel :global(.layers-panel) {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .compact-panel :global(.services-list-container) {
+    flex: none !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  .compact-panel :global(.sublayers-list) {
+    flex: none !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  .compact-panel :global(.service-detail-view) {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
 </style>
