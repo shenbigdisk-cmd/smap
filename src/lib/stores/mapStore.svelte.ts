@@ -801,6 +801,7 @@ class MapStore {
     }
     this.activeTab = tab
     this.saveActiveModule()
+    this.closeServiceConfig()
     moduleManager.activateModule(tab).catch(() => {})
     if (!wasOpen) {
       this.sidebarOpen = true
@@ -819,12 +820,14 @@ class MapStore {
       this.sidebarOpen = false
       this.saveSidebarState()
       this.deactivateMapHandler()
+      this.closeServiceConfig()
     } else {
       if (this.activeHandler && !this.isHandlerMatchingTab(tab)) {
         this.deactivateMapHandler()
       }
       this.activeTab = tab
       this.saveActiveModule()
+      this.closeServiceConfig()
       this.sidebarOpen = true
       this.saveSidebarState()
     }
@@ -839,6 +842,7 @@ class MapStore {
   toggleSidebar() {
     this.sidebarOpen = !this.sidebarOpen
     this.saveSidebarState()
+    this.closeServiceConfig()
     const nowOpen = this.sidebarOpen
     if (!nowOpen) {
       this.deactivateMapHandler()
@@ -855,6 +859,7 @@ class MapStore {
       this.sidebarOpen = false
       this.saveSidebarState()
       this.deactivateMapHandler()
+      this.closeServiceConfig()
       if (this.settings.layout !== 'application' && this.settings.layout !== 'site') {
         setTimeout(() => {
           this.updateExtentForSidebar(false)
